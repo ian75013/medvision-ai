@@ -1,0 +1,17 @@
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.venv/
+.env
+.mypy_cache/
+.pytest_cache/
+coverage.xml
+htmlcov/
+mlruns/
+artifacts/
+models/
+logs/
+*.h5
+*.keras
+.DS_Store

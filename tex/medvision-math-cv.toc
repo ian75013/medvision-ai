@@ -1,0 +1,21 @@
+\contentsline {section}{\numberline {1}Introduction}{3}{section.1}%
+\contentsline {section}{\numberline {2}Mathematical Representation of Images}{3}{section.2}%
+\contentsline {section}{\numberline {3}Image Preprocessing}{4}{section.3}%
+\contentsline {section}{\numberline {4}Discrete Convolution}{4}{section.4}%
+\contentsline {subsection}{\numberline {4.1}Interpretation}{5}{subsection.4.1}%
+\contentsline {section}{\numberline {5}Convolutional Neural Networks}{5}{section.5}%
+\contentsline {section}{\numberline {6}Activation Functions}{6}{section.6}%
+\contentsline {section}{\numberline {7}Pooling}{6}{section.7}%
+\contentsline {section}{\numberline {8}Classification Layer}{6}{section.8}%
+\contentsline {section}{\numberline {9}Loss Function}{6}{section.9}%
+\contentsline {section}{\numberline {10}Optimization}{7}{section.10}%
+\contentsline {section}{\numberline {11}Backpropagation}{7}{section.11}%
+\contentsline {section}{\numberline {12}Transfer Learning}{7}{section.12}%
+\contentsline {section}{\numberline {13}Data Augmentation}{8}{section.13}%
+\contentsline {section}{\numberline {14}Evaluation Metrics}{8}{section.14}%
+\contentsline {subsection}{\numberline {14.1}Accuracy}{8}{subsection.14.1}%
+\contentsline {subsection}{\numberline {14.2}Precision}{8}{subsection.14.2}%
+\contentsline {subsection}{\numberline {14.3}Recall}{8}{subsection.14.3}%
+\contentsline {subsection}{\numberline {14.4}F1 Score}{9}{subsection.14.4}%
+\contentsline {section}{\numberline {15}Explainable AI}{9}{section.15}%
+\contentsline {section}{\numberline {16}Conclusion}{9}{section.16}%

@@ -1,0 +1,238 @@
+﻿\documentclass[11pt]{article}
+
+\usepackage{amsmath}
+\usepackage{amsfonts}
+\usepackage{graphicx}
+\usepackage{hyperref}
+
+\title{MedVision AI \\ Mathematical and Algorithmic Foundations}
+\author{Yann Smatti}
+\date{}
+
+\begin{document}
+
+\maketitle
+
+\tableofcontents
+
+\newpage
+
+\section{Introduction}
+
+Medical image analysis has become a major application of machine learning and computer vision. 
+Modern diagnostic systems assist radiologists by detecting patterns in medical images such as:
+
+\begin{itemize}
+\item X-Ray scans
+\item CT scans
+\item MRI images
+\end{itemize}
+
+This document explains the mathematical foundations of the algorithms implemented in the MedVision AI project.
+
+\section{Image Representation}
+
+An image is mathematically represented as a matrix.
+
+For a grayscale image:
+
+\[
+I \in \mathbb{R}^{H \times W}
+\]
+
+where
+
+\begin{itemize}
+\item $H$ = height
+\item $W$ = width
+\end{itemize}
+
+Each pixel value represents intensity:
+
+\[
+I(x,y) \in [0,255]
+\]
+
+After normalization:
+
+\[
+I(x,y) \in [0,1]
+\]
+
+\section{Convolutional Neural Networks}
+
+CNNs are the standard architecture for image analysis.
+
+A convolution operation is defined as:
+
+\[
+(I * K)(x,y) = \sum_i \sum_j I(x-i,y-j)K(i,j)
+\]
+
+where
+
+\begin{itemize}
+\item $I$ is the image
+\item $K$ is the convolution kernel
+\end{itemize}
+
+Example kernel:
+
+\[
+K =
+\begin{bmatrix}
+1 & 0 & -1 \\
+1 & 0 & -1 \\
+1 & 0 & -1
+\end{bmatrix}
+\]
+
+Convolution allows feature extraction such as:
+
+\begin{itemize}
+\item edges
+\item textures
+\item shapes
+\end{itemize}
+
+\section{Activation Functions}
+
+Neural networks use nonlinear activation functions.
+
+The most common is ReLU:
+
+\[
+ReLU(x) = \max(0,x)
+\]
+
+This introduces non-linearity and improves training stability.
+
+\section{Pooling}
+
+Pooling reduces spatial dimensions.
+
+Max pooling:
+
+\[
+y = \max(x_1,x_2,...,x_n)
+\]
+
+Benefits:
+
+\begin{itemize}
+\item reduces computation
+\item improves invariance
+\item reduces overfitting
+\end{itemize}
+
+\section{Loss Functions}
+
+Binary classification uses Binary Cross Entropy:
+
+\[
+L = -\frac{1}{N} \sum_{i=1}^{N} [y_i \log(p_i) + (1-y_i)\log(1-p_i)]
+\]
+
+where
+
+\begin{itemize}
+\item $y_i$ = true label
+\item $p_i$ = predicted probability
+\end{itemize}
+
+\section{Transfer Learning}
+
+Training deep networks from scratch requires large datasets.
+
+Transfer learning uses pretrained models such as:
+
+\begin{itemize}
+\item ResNet
+\item EfficientNet
+\item VGG
+\end{itemize}
+
+Mathematically:
+
+\[
+f(x) = g(h(x))
+\]
+
+where
+
+\begin{itemize}
+\item $h(x)$ = pretrained feature extractor
+\item $g(x)$ = task specific classifier
+\end{itemize}
+
+\section{Evaluation Metrics}
+
+Medical models require robust evaluation metrics.
+
+Accuracy:
+
+\[
+Accuracy = \frac{TP + TN}{TP + TN + FP + FN}
+\]
+
+Precision:
+
+\[
+Precision = \frac{TP}{TP + FP}
+\]
+
+Recall (Sensitivity):
+
+\[
+Recall = \frac{TP}{TP + FN}
+\]
+
+F1 Score:
+
+\[
+F1 = 2 \cdot \frac{Precision \cdot Recall}{Precision + Recall}
+\]
+
+\section{ROC Curve}
+
+The ROC curve represents the tradeoff between
+
+\begin{itemize}
+\item True Positive Rate
+\item False Positive Rate
+\end{itemize}
+
+\[
+TPR = \frac{TP}{TP + FN}
+\]
+
+\[
+FPR = \frac{FP}{FP + TN}
+\]
+
+\section{Explainable AI}
+
+In medical applications, explainability is crucial.
+
+Grad-CAM computes:
+
+\[
+L^c = ReLU\left(\sum_k \alpha_k^c A^k\right)
+\]
+
+where
+
+\begin{itemize}
+\item $A^k$ are feature maps
+\item $\alpha_k^c$ are importance weights
+\end{itemize}
+
+This produces a heatmap highlighting regions influencing the prediction.
+
+\section{Conclusion}
+
+Computer vision combined with deep learning provides powerful tools for medical diagnosis assistance.
+
+However, rigorous validation and explainability remain essential.
+
+\end{document}
