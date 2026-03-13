@@ -92,6 +92,10 @@ data/raw/chest_xray/
 
 ## Quick start
 
+### 0. Prerequisite
+
+Use **Python 3.10 to 3.12** (the project CI and Docker setup use 3.10). TensorFlow `2.16.1` is not available for Python 3.13+.
+
 ### 1. Create a virtual environment
 
 ```bash
@@ -102,7 +106,7 @@ source .venv/bin/activate
 On Windows PowerShell:
 
 ```powershell
-python -m venv .venv
+py -3.10 -m venv .venv
 .\.venv\Scripts\Activate.ps1
 ```
 
