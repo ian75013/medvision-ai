@@ -12,3 +12,4 @@ mlflow_tracking_uri: file:./mlruns
 class_names:
   - NORMAL
   - PNEUMONIA
+dataset_slug: paultimothymooney/chest-xray-pneumonia
