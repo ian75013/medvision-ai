@@ -17,7 +17,8 @@ logs/
 .DS_Store
 # Created by https://www.toptal.com/developers/gitignore/api/latex
 # Edit at https://www.toptal.com/developers/gitignore?templates=latex
-
+.venv-wsl/
+.vscode/
 ### LaTeX ###
 ## Core latex/pdflatex auxiliary files:
 *.aux

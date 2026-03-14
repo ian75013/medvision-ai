@@ -1,8 +1,8 @@
 # MedVision AI
 
-MedVision AI est un projet de **computer vision appliqué à l'imagerie médicale** conçu comme un **template réaliste de projet Machine Learning Engineer / Computer Vision Engineer**.
+MedVision AI est mon projet de **computer vision appliqué à l'imagerie médicale**, conçu comme un **template réaliste de projet Machine Learning Engineer / Computer Vision Engineer**.
 
-Il montre un pipeline de bout en bout autour d'un cas d'usage simple mais crédible :
+J'y montre un pipeline de bout en bout autour d'un cas d'usage simple mais crédible :
 
 - **classification binaire de radiographies thoraciques**
 - **entraînement d'un modèle baseline**
@@ -13,7 +13,7 @@ Il montre un pipeline de bout en bout autour d'un cas d'usage simple mais crédi
 - **explicabilité locale via Grad-CAM**
 - **tests et structure de projet propre**
 
-L'objectif n'est pas seulement d'obtenir une prédiction, mais de montrer une façon de travailler proche d'un projet **MedTech / AI product / applied ML**.
+Mon objectif n'est pas seulement d'obtenir une prédiction, mais de montrer ma façon de travailler, proche d'un projet **MedTech / AI product / applied ML**.
 
 ---
 
@@ -35,7 +35,7 @@ L'objectif n'est pas seulement d'obtenir une prédiction, mais de montrer une fa
 - [14. Docker](#14-docker)
 - [15. Structure de la configuration](#15-structure-de-la-configuration)
 - [16. Explication du pipeline de training](#16-explication-du-pipeline-de-training)
-- [17. Ce qu'on optimise réellement dans le projet](#17-ce-quon-optimise-réellement-dans-le-projet)
+- [17. Ce que j'optimise réellement dans le projet](#17-ce-que-joptimise-réellement-dans-le-projet)
 - [18. Résultats attendus et livrables](#18-résultats-attendus-et-livrables)
 - [19. Dépannage](#19-dépannage)
 - [20. Pistes d'amélioration](#20-pistes-damélioration)
@@ -46,7 +46,7 @@ L'objectif n'est pas seulement d'obtenir une prédiction, mais de montrer une fa
 # 1. Pourquoi ce projet ?
 
 Beaucoup de projets IA sont limités à un notebook unique.  
-Ce repository vise à aller plus loin en montrant :
+Avec ce repository, je vais plus loin en montrant :
 
 1. une **structure de code propre**
 2. une **séparation claire des responsabilités**
@@ -56,18 +56,18 @@ Ce repository vise à aller plus loin en montrant :
 6. une **visualisation simple pour démonstration**
 7. une **base pour expliquer le modèle**
 
-Autrement dit, il montre non seulement que tu sais entraîner un modèle, mais aussi que tu sais :
+Autrement dit, je montre non seulement que je sais entraîner un modèle, mais aussi que je sais :
 
 - organiser un projet ML,
 - manipuler des images médicales,
 - exposer une solution utilisable,
-- et documenter ton travail.
+- et documenter mon travail.
 
 ---
 
 # 2. Ce que démontre techniquement le projet
 
-Le projet met en avant les compétences suivantes :
+Je mets en avant les compétences suivantes :
 
 - **Python**
 - **TensorFlow / Keras**
@@ -83,7 +83,7 @@ Le projet met en avant les compétences suivantes :
 - **pytest**
 - **Explainable AI avec Grad-CAM**
 
-Il est particulièrement pertinent pour des postes du type :
+Il est particulièrement pertinent pour les postes que je cible :
 
 - Machine Learning Engineer
 - Computer Vision Engineer
@@ -159,7 +159,7 @@ Contient les données brutes.
 Le dataset Kaggle doit y être décompressé.
 
 ### `data/processed/`
-Réservé aux données prétraitées si tu veux étendre le projet plus tard.
+Réservé aux données prétraitées si je veux étendre le projet plus tard.
 
 ### `src/training/`
 Contient le pipeline d'entraînement.
@@ -235,7 +235,7 @@ Le moyen le plus propre d'automatiser le téléchargement consiste à utiliser l
 pip install kaggle
 ```
 
-Tu peux ensuite télécharger automatiquement le dataset.
+Je peux ensuite télécharger automatiquement le dataset.
 
 ---
 
@@ -254,7 +254,7 @@ rm -f chest-xray-pneumonia.zip
 cd ../..
 ```
 
-À la fin, tu dois avoir :
+À la fin, je dois avoir :
 
 ```text
 data/raw/chest_xray/
@@ -294,7 +294,7 @@ del chest-xray-pneumonia.zip
 cd ..\..
 ```
 
-> Selon ta version de Windows, `tar -xf` peut fonctionner directement.  
+> Selon ma version de Windows, `tar -xf` peut fonctionner directement.  
 > Sinon, utilise PowerShell avec `Expand-Archive`.
 
 ---
@@ -306,11 +306,11 @@ Pour que la CLI Kaggle fonctionne, il faut configurer les credentials.
 ## Étape 1 — créer une clé API Kaggle
 
 - connecte-toi à Kaggle
-- va dans ton profil
+- je vais dans mon profil
 - ouvre **Account**
 - dans la section **API**, clique sur **Create New Token**
 
-Tu récupères un fichier `kaggle.json`.
+Je récupère un fichier `kaggle.json`.
 
 ## Étape 2 — placer le fichier au bon endroit
 
@@ -332,7 +332,7 @@ C:\Users\<TON_USER>\.kaggle\kaggle.json
 
 ## Alternative avec variables d'environnement
 
-Tu peux aussi définir :
+Je peux aussi définir :
 
 ### Linux / macOS
 
@@ -354,7 +354,7 @@ $env:KAGGLE_KEY="ta_cle"
 
 ## Version de Python recommandée
 
-Le projet utilise TensorFlow `2.16.1`, ce qui implique :
+J'utilise TensorFlow `2.16.1`, ce qui implique :
 
 - **Python 3.10 à 3.12 recommandé**
 - éviter Python 3.13 pour l'instant
@@ -546,7 +546,7 @@ Une fois l'API lancée :
 http://localhost:8000/docs
 ```
 
-Tu peux y tester l'upload directement.
+Je peux y tester l'upload directement.
 
 ---
 
@@ -657,7 +657,7 @@ docker build -f docker/Dockerfile -t medvision-ai .
 docker compose up --build
 ```
 
-> Selon ton usage, il faudra peut-être ajuster les volumes et le montage du dataset local.
+> Selon mon usage, il faudra peut-être ajuster les volumes et le montage du dataset local.
 
 ---
 
@@ -722,9 +722,9 @@ Cela améliore la stabilité de l'entraînement et évite certains sur-apprentis
 
 ---
 
-# 17. Ce qu'on optimise réellement dans le projet
+# 17. Ce que j'optimise réellement dans le projet
 
-Le projet est intéressant parce qu'il raconte une histoire crédible :
+Le projet est intéressant parce qu'il raconte une histoire crédible que j'assume :
 
 ## Modèle baseline
 Le baseline représente un modèle existant, simple, rapide, mais limité.
@@ -739,7 +739,7 @@ Le modèle optimisé ajoute une logique plus sérieuse :
 
 ## Message entretien possible
 
-Tu peux expliquer le projet comme ceci :
+Je peux expliquer le projet comme ceci :
 
 > I started from a simple baseline CNN to simulate an existing legacy model, then I improved performance and robustness using transfer learning, class weighting, better callbacks and experiment tracking with MLflow. I also exposed the model through FastAPI and built a simple demo UI with Streamlit.
 
@@ -747,7 +747,7 @@ Tu peux expliquer le projet comme ceci :
 
 # 18. Résultats attendus et livrables
 
-Après un entraînement complet, tu devrais retrouver :
+Après un entraînement complet, je devrais retrouver :
 
 ## Modèle sauvegardé
 
@@ -778,7 +778,7 @@ mlruns/
 # 19. Dépannage
 
 ## 1. TensorFlow ne s'installe pas
-Vérifie ta version de Python.
+Je vérifie ma version de Python.
 
 Utilise de préférence :
 - Python 3.10
@@ -786,7 +786,7 @@ Utilise de préférence :
 - Python 3.12
 
 ## 2. Kaggle CLI ne fonctionne pas
-Vérifie :
+Je vérifie :
 - la présence de `kaggle.json`
 - les permissions
 - ou les variables `KAGGLE_USERNAME` / `KAGGLE_KEY`
@@ -818,7 +818,7 @@ data/raw/chest-xray-pneumonia/chest_xray/
 
 # 20. Pistes d'amélioration
 
-Voici plusieurs prolongements possibles si tu veux professionnaliser encore le projet :
+Voici plusieurs prolongements possibles si je veux professionnaliser encore le projet :
 
 ## ML / Vision
 - multiclass classification
@@ -848,7 +848,7 @@ Voici plusieurs prolongements possibles si tu veux professionnaliser encore le p
 
 # 21. Pitch entretien
 
-Tu peux présenter le projet en entretien de cette façon :
+Je peux présenter le projet en entretien de cette façon :
 
 > MedVision AI is a production-minded medical imaging project built around chest X-ray classification.  
 > I implemented a baseline model and an optimized model to simulate the improvement of an existing pipeline.  
