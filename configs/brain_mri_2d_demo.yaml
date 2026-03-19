@@ -1,0 +1,29 @@
+project_name: medvision-brain-mri
+seed: 42
+experiment_name: brain-mri-2d-demo
+artifacts_dir: artifacts
+raw_data_dir: data/raw/brain_mri_demo
+processed_data_dir: data/processed/brain_mri_demo
+splits_csv: data/processed/brain_mri_demo/splits.csv
+train_csv: data/processed/brain_mri_demo/train.csv
+val_csv: data/processed/brain_mri_demo/val.csv
+test_csv: data/processed/brain_mri_demo/test.csv
+num_classes: 2
+class_names: [normal, tumor]
+image_size: 128
+batch_size: 8
+epochs: 3
+learning_rate: 0.001
+num_workers: 0
+patience: 3
+slice_selection:
+  strategy: central_k
+  k: 5
+normalization:
+  method: zscore_nonzero
+model:
+  name: simple_cnn_2d
+  in_channels: 1
+training:
+  device: cpu
+  positive_class_weight: 1.0
