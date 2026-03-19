@@ -1,8 +1,16 @@
-# Terraform AWS S3 remote for DVC
+# Terraform — AWS S3 remote pour DVC
 
-This folder provisions an S3 bucket that can be used as a DVC remote.
+Ce module crée un bucket S3 privé pour stocker les données et artefacts suivis par DVC.
 
-## Usage
+## Ce que le module fait
+
+- crée un bucket S3 dédié ;
+- bloque l'accès public ;
+- active le chiffrement serveur AES256 ;
+- peut activer le versioning ;
+- ajoute des tags simples.
+
+## Utilisation
 
 ```bash
 cd terraform/aws_dvc_remote
@@ -12,17 +20,28 @@ terraform plan
 terraform apply
 ```
 
-Then configure DVC in the project root:
+## Variables principales
+
+- `aws_region`
+- `bucket_name`
+- `enable_versioning`
+- `environment`
+- `project`
+
+## Une fois le bucket créé
+
+Depuis la racine du projet :
 
 ```bash
-dvc remote add -d s3remote s3://<your-bucket-name>
-dvc remote modify s3remote region eu-west-3
+dvc remote add -d s3remote s3://<bucket-name>
+dvc remote modify s3remote region <aws-region>
+dvc push
 ```
 
-If you authenticate with AWS environment variables:
+## Exemple
 
 ```bash
-export AWS_ACCESS_KEY_ID=...
-export AWS_SECRET_ACCESS_KEY=...
-export AWS_DEFAULT_REGION=eu-west-3
+dvc remote add -d s3remote s3://medvision-dvc-prod
+dvc remote modify s3remote region eu-west-3
+dvc push
 ```
