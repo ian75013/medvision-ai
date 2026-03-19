@@ -1,116 +1,201 @@
-# README_DVC — DVC dans MedVision
+# README_DVC — Utiliser DVC dans MedVision
 
-## DVC, ce que c'est ici
+## 1. Ce que fait DVC
 
-Dans ce projet, **DVC** sert à :
-- décrire un pipeline reproductible ;
-- suivre les données et artefacts trop lourds pour Git ;
-- brancher un remote S3 ou Google Drive ;
-- comparer des expériences via `dvc exp`.
+DVC (**Data Version Control**) ne remplace ni Git ni Docker.
 
-DVC **n'est pas** un conteneur Docker. Docker isole l'environnement ; DVC orchestre le pipeline de données et de modèles.
+- **Git** versionne le code.
+- **DVC** versionne les gros artefacts ML : datasets, modèles, métriques, pipelines.
+- **Docker** fige l'environnement d'exécution.
 
-## Articulation avec MLflow
+Dans MedVision, DVC sert surtout à :
+- télécharger ou préparer le dataset,
+- rejouer l'entraînement,
+- stocker les artefacts hors de Git,
+- brancher un remote local, S3 ou Google Drive.
 
-Dans MedVision :
-- **DVC** suit le pipeline, les paramètres, les métriques et les sorties ;
-- **MLflow** suit les runs d'entraînement, les métriques et les artefacts ;
-- **Terraform** peut créer l'infrastructure S3 du remote DVC ;
-- **Docker Compose** facilite le lancement des services.
+## 2. Dépendances Python
 
-## Pipeline DVC du dépôt
+Le projet installe maintenant DVC directement via `requirements.txt` :
 
-Le pipeline est défini dans `dvc.yaml`.
+```bash
+pip install -r requirements.txt
+```
 
-Dans ce zip, le pipeline canonique est orienté **Brain MRI Kaggle** :
-- `download_data`
-- `train_brain_mri`
+La ligne importante est :
 
-Il peut être enrichi plus tard avec des étapes `prepare`, `evaluate` et `package`.
+```txt
+dvc[s3,gdrive]==3.59.2
+```
 
-## Fichiers à connaître
+Elle active :
+- le support **AWS S3** pour un bucket DVC,
+- le support **Google Drive** pour un remote DVC sur Drive.
 
-- `dvc.yaml` : définition des stages
-- `params.yaml` : paramètres pilotés par DVC
-- `.dvc/config` : remotes DVC
-- `artifacts/` : sorties du pipeline
-- `mlruns/` : suivi MLflow
+## 3. Fichiers DVC du projet
 
-## Démarrage rapide
+- `dvc.yaml` : pipeline DVC
+- `params.yaml` : hyperparamètres suivis par DVC
+- `.dvc/` : configuration locale DVC
+- `.dvc/cache/` : cache local
 
-### 1. Initialiser DVC
+## 4. Pipeline actuel
+
+Le pipeline DVC de MedVision contient deux étapes :
+
+### `download_data`
+Télécharge le dataset Kaggle Brain Tumor MRI dans :
+
+```text
+data/raw/brain_tumor_mri/
+```
+
+### `train_brain_mri`
+Entraîne le modèle à partir du dataset téléchargé et produit :
+
+```text
+artifacts/models/brain_mri_optimized.keras
+artifacts/reports/brain_mri_metrics.json
+artifacts/reports/brain_mri_history.json
+```
+
+## 5. Commandes de base
+
+### Initialiser DVC
 
 ```bash
 dvc init
 ```
 
-### 2. Rejouer le pipeline
+### Exécuter tout le pipeline
 
 ```bash
 dvc repro
 ```
 
-### 3. Vérifier ce qui a changé
+### Voir ce qui a changé
 
 ```bash
 dvc status
 dvc params diff
 ```
 
-### 4. Lancer une expérience DVC
+### Expériences DVC
 
 ```bash
 dvc exp run
-```
-
-### 5. Voir les expériences
-
-```bash
 dvc exp show
 ```
 
-## Remote S3
+## 6. Remote local simple
 
-Après provisionnement du bucket Terraform :
+Exemple avec un dossier local :
 
 ```bash
-dvc remote add -d s3remote s3://<bucket-name>
-dvc remote modify s3remote region eu-west-3
-dvc push
+dvc remote add -d localremote /chemin/vers/medvision-dvc-storage
 ```
 
-## Remote Google Drive
+Puis :
 
 ```bash
-dvc remote add -d gdriveremote gdrive://<folder-id>
-dvc push
-```
-
-## Bon usage recommandé dans ce dépôt
-
-### Pour l'apprentissage / local
-- Git pour le code
-- DVC pour les données et sorties
-- MLflow pour les runs
-- stockage local des données et de `mlruns`
-
-### Pour une version plus MLOps
-- remote DVC sur S3 ou Google Drive
-- MLflow persistant
-- exécution via Docker Compose
-- CI/CD ensuite
-
-## Commandes utiles
-
-```bash
-dvc repro
-dvc status
-dvc exp run
-dvc exp show
 dvc push
 dvc pull
 ```
 
-## Limite importante
+## 7. Remote AWS S3
 
-DVC décrit ici surtout le **workflow Brain MRI**. La partie historique chest X-ray existe encore dans le repo, mais ce n'est pas le chemin le plus cohérent à utiliser dans l'état actuel du zip.
+Le projet contient maintenant Terraform dans :
+
+```text
+terraform/aws_dvc_remote/
+```
+
+### 7.1 Créer le bucket avec Terraform
+
+```bash
+cd terraform/aws_dvc_remote
+cp terraform.tfvars.example terraform.tfvars
+terraform init
+terraform plan
+terraform apply
+```
+
+### 7.2 Configurer DVC avec le bucket
+
+Depuis la racine du projet :
+
+```bash
+dvc remote add -d s3remote s3://<nom-du-bucket>
+dvc remote modify s3remote region eu-west-3
+```
+
+Si tu utilises des variables d'environnement AWS :
+
+```bash
+export AWS_ACCESS_KEY_ID=...
+export AWS_SECRET_ACCESS_KEY=...
+export AWS_DEFAULT_REGION=eu-west-3
+```
+
+Ensuite :
+
+```bash
+dvc push
+dvc pull
+```
+
+## 8. Remote Google Drive
+
+Google Drive est utile pour un usage personnel ou un petit POC.
+
+### Ajouter le remote
+
+```bash
+dvc remote add -d gdriveremote gdrive://<folder-id>
+```
+
+Le `<folder-id>` correspond à l'identifiant du dossier Google Drive cible.
+
+### Authentification
+
+Au premier accès, DVC peut demander une authentification Google.
+
+Ensuite :
+
+```bash
+dvc push
+dvc pull
+```
+
+## 9. Exemple de workflow recommandé
+
+### Une première fois
+
+```bash
+python -m venv .venv
+source .venv/bin/activate  # Linux/macOS
+pip install -r requirements.txt
+dvc init
+```
+
+### Télécharger et entraîner
+
+```bash
+dvc repro
+```
+
+### Sauvegarder les artefacts sur le remote
+
+```bash
+dvc push
+```
+
+## 10. Ce qu'il faut retenir
+
+La bonne image mentale est :
+
+- **Git** = code
+- **DVC** = données + modèles + pipeline ML
+- **Docker** = environnement
+
+Donc : **DVC n'est pas un conteneur**. C'est l'outil qui structure et versionne ton pipeline ML.

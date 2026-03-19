@@ -1,107 +1,41 @@
-# Architecture MedVision
+# Architecture
 
-## 1. Vue d'ensemble
+## Overview
 
-MedVision combine quatre couches principales :
-- **ML training** pour entraîner des modèles de vision médicale ;
-- **MLOps** pour tracer, reproduire et stocker les artefacts ;
-- **Serving** pour exposer l'inférence ;
-- **Infra** pour provisionner le stockage du remote DVC.
+MedVision now exposes a single comparison surface for two problems:
 
-```mermaid
-flowchart LR
-    A[Kaggle Dataset] --> B[src/data/download_brain_mri_dataset.py]
-    B --> C[data/raw/brain_tumor_mri]
-    C --> D[src/utils/dataset_multiclass.py]
-    D --> E[src/training/train_brain_mri.py]
-    E --> F[artifacts/models]
-    E --> G[artifacts/reports]
-    E --> H[mlruns/ MLflow]
-    I[dvc.yaml + params.yaml] --> B
-    I --> E
-    J[Terraform S3] --> K[S3 bucket DVC remote]
-    L[DVC] --> C
-    L --> F
-    L --> G
-    L --> K
-    F --> M[FastAPI / Streamlit]
-```
+- `chest_xray`: binary pneumonia classification
+- `brain_mri`: 4-class brain tumor MRI classification
 
-## 2. Couche Training
+The project is organized around four layers:
 
-### Workflow Brain MRI
+1. **Training**
+   - `src/training/train.py` for chest X-ray
+   - `src/training/train_brain_mri.py` for brain MRI
+2. **Registry**
+   - `src/registry/model_registry.py` discovers trained models and metrics in `artifacts/`
+3. **Serving**
+   - `src/api/main.py` exposes `/models`, `/compare`, and `/predict`
+4. **UI**
+   - `streamlit_app.py` lets you compare metrics and run side-by-side predictions across models
 
-Le flux le plus exploitable du dépôt est :
-1. téléchargement du dataset Kaggle ;
-2. chargement des images multi-classes ;
-3. entraînement TensorFlow/Keras ;
-4. génération de métriques ;
-5. log MLflow ;
-6. pipeline DVC.
+## Artifact convention
 
-### Scripts clés
+The comparison layer relies on predictable artifact names:
 
-- `src/data/download_brain_mri_dataset.py`
-- `src/training/train_brain_mri.py`
-- `src/utils/dataset_multiclass.py`
-- `src/evaluation/metrics_multiclass.py`
+### Chest X-ray
+- `artifacts/models/baseline_model.keras`
+- `artifacts/models/optimized_model.keras`
+- `artifacts/reports/baseline_metrics.json` (optional)
+- `artifacts/reports/optimized_metrics.json` (optional)
 
-## 3. Couche MLOps
+### Brain MRI
+- `artifacts/models/brain_mri_baseline.keras`
+- `artifacts/models/brain_mri_optimized.keras`
+- `artifacts/reports/brain_mri_baseline_metrics.json` (optional)
+- `artifacts/reports/brain_mri_metrics.json`
 
-### MLflow
+## Why a registry?
 
-MLflow est utilisé dans les scripts d'entraînement pour :
-- créer les expériences ;
-- enregistrer les paramètres ;
-- tracer les métriques ;
-- stocker les artefacts du run.
-
-### DVC
-
-DVC complète MLflow en pilotant le pipeline et les remotes de données.
-
-### Terraform
-
-Terraform provisionne le bucket S3 destiné au remote DVC.
-
-## 4. Couche Serving
-
-### FastAPI
-
-`src/api/main.py` expose une API de prédiction minimale.
-
-### Streamlit
-
-`streamlit_app.py` permet une démonstration simple côté UI.
-
-## 5. Observation importante
-
-Le serving actuel est encore aligné avec la logique historique **chest X-ray** plutôt qu'avec le flux **Brain MRI**. Le dépôt gagnerait à séparer explicitement :
-- `serving/chest_xray`
-- `serving/brain_mri`
-
-## 6. Architecture cible recommandée
-
-```text
-src/
-├── api/
-│   ├── chest_xray/
-│   └── brain_mri/
-├── data/
-├── datasets/
-├── evaluation/
-├── inference/
-├── models/
-├── preprocessing/
-├── training/
-└── utils/
-```
-
-## 7. Conclusion
-
-Ce dépôt est une base MLOps/ML crédible pour un portfolio ou un refactor d'ingénierie, avec une vraie valeur pédagogique sur :
-- l'entraînement ;
-- le tracking MLflow ;
-- les pipelines DVC ;
-- le stockage remote ;
-- le packaging applicatif.
+FastAPI and Streamlit should not hardcode a single model file anymore.
+The registry scans the artifact directories and produces one normalized view for both problems so the API and UI can stay aligned.

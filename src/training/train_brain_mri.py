@@ -158,11 +158,11 @@ def main() -> None:
         metrics = evaluate_multiclass_predictions(y_true_arr, y_pred_arr, class_names)
         report = build_multiclass_report(y_true_arr, y_pred_arr, class_names)
 
-        model_path = model_dir / "brain_mri_optimized.keras"
-        report_path = reports_dir / "brain_mri_classification_report.txt"
-        cm_path = reports_dir / "brain_mri_confusion_matrix.png"
-        metrics_path = reports_dir / "brain_mri_metrics.json"
-        history_path = reports_dir / "brain_mri_history.json"
+        model_path = model_dir / f"brain_mri_{args.model}.keras"
+        report_path = reports_dir / f"brain_mri_{args.model}_classification_report.txt"
+        cm_path = reports_dir / f"brain_mri_{args.model}_confusion_matrix.png"
+        metrics_path = reports_dir / ("brain_mri_metrics.json" if args.model == "optimized" else f"brain_mri_{args.model}_metrics.json")
+        history_path = reports_dir / f"brain_mri_{args.model}_history.json"
 
         model.save(model_path)
         report_path.write_text(report, encoding="utf-8")
