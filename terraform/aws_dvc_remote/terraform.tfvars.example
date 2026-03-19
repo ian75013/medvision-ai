@@ -1,0 +1,7 @@
+aws_region  = "eu-west-3"
+bucket_name = "medvision-dvc-your-unique-suffix"
+
+tags = {
+  Environment = "dev"
+  Owner       = "Yann"
+}

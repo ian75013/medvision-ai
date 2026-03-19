@@ -1,0 +1,79 @@
+stages:
+  download_chest_xray:
+    cmd: python -m src.data.download_dataset
+    deps:
+      - src/data/download_dataset.py
+    outs:
+      - data/raw/chest_xray
+
+  train_chest_xray:
+    cmd: python -m src.training.train --config configs/config.yaml --model optimized --epochs ${chest_xray.epochs}
+    deps:
+      - src/training/train.py
+      - src/utils/dataset.py
+      - src/evaluation/metrics.py
+      - src/evaluation/metrics_multiclass.py
+      - configs/config.yaml
+      - data/raw/chest_xray
+    params:
+      - chest_xray.seed
+      - chest_xray.image_size
+      - chest_xray.batch_size
+      - chest_xray.epochs
+      - chest_xray.learning_rate
+      - chest_xray.validation_split
+    outs:
+      - artifacts/models/optimized_model.keras
+      - artifacts/reports/optimized_classification_report.txt
+      - artifacts/reports/optimized_confusion_matrix.png
+      - artifacts/reports/optimized_history.json
+    metrics:
+      - artifacts/reports/optimized_metrics.json:
+          cache: false
+    plots:
+      - artifacts/reports/optimized_history.json:
+          x: epoch
+          y:
+            - accuracy
+            - val_accuracy
+            - loss
+            - val_loss
+
+  download_brain_mri:
+    cmd: python -m src.data.download_brain_mri_dataset --config configs/brain_tumor_mri.yaml
+    deps:
+      - src/data/download_brain_mri_dataset.py
+      - configs/brain_tumor_mri.yaml
+    outs:
+      - data/raw/brain_tumor_mri
+
+  train_brain_mri:
+    cmd: python -m src.training.train_brain_mri --config configs/brain_tumor_mri.yaml --model optimized --epochs ${brain_mri.epochs}
+    deps:
+      - src/training/train_brain_mri.py
+      - src/utils/dataset_multiclass.py
+      - src/evaluation/metrics_multiclass.py
+      - configs/brain_tumor_mri.yaml
+      - data/raw/brain_tumor_mri
+    params:
+      - brain_mri.seed
+      - brain_mri.image_size
+      - brain_mri.batch_size
+      - brain_mri.epochs
+      - brain_mri.learning_rate
+      - brain_mri.validation_split
+    outs:
+      - artifacts/models/brain_mri_optimized.keras
+      - artifacts/reports/brain_mri_optimized_classification_report.txt
+      - artifacts/reports/brain_mri_optimized_confusion_matrix.png
+    metrics:
+      - artifacts/reports/brain_mri_metrics.json:
+          cache: false
+    plots:
+      - artifacts/reports/brain_mri_optimized_history.json:
+          x: epoch
+          y:
+            - accuracy
+            - val_accuracy
+            - loss
+            - val_loss

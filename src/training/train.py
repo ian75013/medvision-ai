@@ -11,6 +11,7 @@ import tensorflow as tf
 from sklearn.utils.class_weight import compute_class_weight
 
 from src.evaluation.metrics import build_classification_report, evaluate_predictions, save_confusion_matrix
+from src.evaluation.metrics_multiclass import save_metrics
 from src.models.baseline_model import build_baseline_model
 from src.models.optimized_model import build_optimized_model
 from src.utils.config import load_config
@@ -138,6 +139,10 @@ def main() -> None:
         cm_path = reports_dir / f"{args.model}_confusion_matrix.png"
         save_confusion_matrix(y_true_arr, y_prob_arr, cm_path)
         mlflow.log_artifact(str(cm_path))
+
+        metrics_path = reports_dir / f"{args.model}_metrics.json"
+        save_metrics(metrics, metrics_path)
+        mlflow.log_artifact(str(metrics_path))
 
         history_path = reports_dir / f"{args.model}_history.json"
         history_path.write_text(json.dumps(history.history, indent=2), encoding="utf-8")
