@@ -41,9 +41,27 @@ Elle active :
 
 ## 4. Pipeline actuel
 
-Le pipeline DVC de MedVision contient deux étapes :
+Le pipeline DVC de MedVision contient quatre étapes (option B, multi-problèmes) :
 
-### `download_data`
+### `download_chest_xray`
+Télécharge le dataset Kaggle Chest X-ray dans :
+
+```text
+data/raw/chest_xray/
+```
+
+### `train_chest_xray`
+Entraîne le modèle Chest X-ray (optimized) et produit :
+
+```text
+artifacts/models/optimized_model.keras
+artifacts/reports/optimized_metrics.json
+artifacts/reports/optimized_history.json
+artifacts/reports/optimized_classification_report.txt
+artifacts/reports/optimized_confusion_matrix.png
+```
+
+### `download_brain_mri`
 Télécharge le dataset Kaggle Brain Tumor MRI dans :
 
 ```text
@@ -56,7 +74,9 @@ Entraîne le modèle à partir du dataset téléchargé et produit :
 ```text
 artifacts/models/brain_mri_optimized.keras
 artifacts/reports/brain_mri_metrics.json
-artifacts/reports/brain_mri_history.json
+artifacts/reports/brain_mri_optimized_history.json
+artifacts/reports/brain_mri_optimized_classification_report.txt
+artifacts/reports/brain_mri_optimized_confusion_matrix.png
 ```
 
 ## 5. Commandes de base
@@ -182,6 +202,13 @@ dvc init
 
 ```bash
 dvc repro
+```
+
+### Exécuter seulement une composante (si besoin)
+
+```bash
+dvc repro train_chest_xray
+dvc repro train_brain_mri
 ```
 
 ### Sauvegarder les artefacts sur le remote
