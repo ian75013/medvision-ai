@@ -1,3 +1,11 @@
+# PyTorch (CUDA 12.4 build — compatible with CUDA 13.0 driver)
+# The extra index lets pip/uv resolve the GPU wheel from the PyTorch CDN.
+--extra-index-url https://download.pytorch.org/whl/cu124
+torch>=2.2
+
+# Medical-imaging I/O
+nibabel>=5.0
+
 # TensorFlow 2.16.1 is only published for Python <= 3.12.
 tensorflow==2.16.1; python_version < "3.13"
 numpy==1.26.4
