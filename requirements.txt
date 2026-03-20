@@ -18,3 +18,4 @@ kaggle==1.6.17
 # DVC + remotes
 # The extras below let DVC use AWS S3 and Google Drive remotes.
 dvc[s3,gdrive]==3.59.2
+awscli==1.29.57

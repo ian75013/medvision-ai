@@ -1,3 +1,6 @@
+> **Legal notice**  
+> This repository is proprietary software owned by Doctum Consilium.  
+> No use, reproduction, modification, or redistribution is permitted without prior written authorization.
 # MedVision AI
 
 MedVision is a computer-vision and MLOps playground for two medical imaging tasks:
