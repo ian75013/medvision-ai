@@ -52,11 +52,32 @@ terraform/        # infra for DVC remote
 
 ## Installation
 
+> **Prérequis** : [uv](https://docs.astral.sh/uv/getting-started/installation/) — gestionnaire de paquets Python ultra-rapide.
+> ```bash
+> curl -LsSf https://astral.sh/uv/install.sh | sh   # Linux/macOS
+> # winget install --id=astral-sh.uv -e             # Windows
+> ```
+
+### Créer l'environnement et installer les dépendances
+
 ```bash
-python -m venv .venv
-source .venv/bin/activate   # Linux/macOS
-# .venv\Scripts\activate    # Windows PowerShell
-pip install -r requirements.txt
+uv venv .venv-wsl
+source .venv-wsl/bin/activate   # Linux/macOS
+# .venv-wsl\Scripts\activate    # Windows PowerShell
+
+uv pip install -r requirements.txt
+```
+
+> **Note GPU** : le `requirements.txt` référence l'index PyTorch CUDA 12.4
+> (`https://download.pytorch.org/whl/cu124`). Si vous n'avez pas de GPU NVIDIA,
+> retirez la ligne `--extra-index-url` du fichier avant l'installation.
+
+### Ajouter / supprimer un paquet
+
+```bash
+uv pip install <paquet>          # installer
+uv pip uninstall <paquet>        # désinstaller
+uv pip compile requirements.txt  # verrouiller les versions dans requirements.lock
 ```
 
 ## Train models
