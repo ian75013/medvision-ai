@@ -1,0 +1,23 @@
+
+project_name: medvision-chest-xray-segmentation
+run_name: chest-xray-segmentation
+raw_dataset_dir: data/raw/chest_xray_segmentation
+manifest_path: data/processed/chest_xray_segmentation/manifest.csv
+dataset_summary_path: artifacts/reports/chest_xray_segmentation_dataset_summary.json
+model_dir: artifacts/models
+reports_dir: artifacts/reports
+overlays_dir: artifacts/overlays
+artifact_prefix: chest_xray_segmentation_unet
+image_size: 256
+batch_size: 8
+epochs: 10
+learning_rate: 0.001
+validation_split: 0.2
+seed: 42
+task_type: multitask
+segmentation_loss_weight: 1.0
+classification_loss_weight: 0.4
+class_names:
+  - NORMAL
+  - PNEUMONIA
+mlflow_tracking_uri: file:./mlruns

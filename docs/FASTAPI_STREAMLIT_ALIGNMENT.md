@@ -1,34 +1,22 @@
-# FastAPI and Streamlit alignment
+# FastAPI / Streamlit alignment
 
-## What changed
+FastAPI and Streamlit both consume the same registry from `src/registry/model_registry.py`.
 
-Before this update:
-- FastAPI only served one chest X-ray model
-- Streamlit only loaded one chest X-ray model
+That registry now covers:
+- chest X-ray classification
+- brain MRI classification
+- brain tumor segmentation + classification
+- chest X-ray segmentation + classification
 
-After this update:
-- both layers use the same registry
-- both support `baseline` and `optimized` models for both problems
-- both can expose stored metrics for performance comparison
+This means the UI and API stay aligned as long as artifact names remain consistent with the registry.
 
-## FastAPI endpoints
+## Classification problems
+The UI/API return predicted class probabilities.
 
-### `GET /models`
-Returns the full registry or one problem registry.
+## Segmentation problems
+The UI/API return:
+- the image-level predicted class,
+- segmentation-derived metadata such as mask foreground ratio,
+- overlays in Streamlit.
 
-### `GET /compare?problem=chest_xray`
-Returns comparison rows built from saved metrics.
-
-### `POST /predict?problem=brain_mri&model_name=optimized`
-Runs inference with the selected trained model.
-
-## Streamlit behavior
-
-The Streamlit app now:
-- lets you choose a problem
-- shows a comparison table of available models and metrics
-- lets you upload one image and compare predictions from several trained models
-
-## Current limitation
-
-The UI and API rely on artifact naming conventions. If you train a new model with a custom filename, either rename it to match the convention or extend `src/registry/model_registry.py`.
+This common registry pattern is important architecturally because it avoids hard-coding separate serving logic for each experiment.

@@ -1,41 +1,39 @@
 # Datasets
 
-## 1. Dataset historique
+## Classification datasets
 
-Le dépôt conserve une configuration historique `configs/config.yaml` orientée **chest X-ray pneumonia**.
+### Chest X-ray pneumonia
+Expected layout:
+- `data/raw/chest_xray/train/NORMAL`
+- `data/raw/chest_xray/train/PNEUMONIA`
+- `data/raw/chest_xray/val/...`
+- `data/raw/chest_xray/test/...`
 
-## 2. Dataset recommandé dans ce zip
+### Brain MRI tumor classification
+Expected layout:
+- `data/raw/brain_tumor_mri/Training/glioma`
+- `data/raw/brain_tumor_mri/Training/meningioma`
+- `data/raw/brain_tumor_mri/Training/notumor`
+- `data/raw/brain_tumor_mri/Training/pituitary`
+- and the same under `Testing/`
 
-Le workflow le plus cohérent est aujourd'hui le dataset Kaggle :
+## Segmentation datasets
 
-```text
-masoudnickparvar/brain-tumor-mri-dataset
-```
+Segmentation datasets are less standardized. The repository therefore uses a two-step strategy:
 
-### Structure attendue
+1. **Download raw files from Kaggle**
+2. **Build a manifest automatically** by matching images and masks through filename heuristics
 
-```text
-data/raw/brain_tumor_mri/
-├── Training/
-│   ├── glioma/
-│   ├── meningioma/
-│   ├── notumor/
-│   └── pituitary/
-└── Testing/
-    ├── glioma/
-    ├── meningioma/
-    ├── notumor/
-    └── pituitary/
-```
+## Manifest schema
 
-## 3. Démo synthétique
+The generated CSV contains:
+- `image_path`
+- `mask_path`
+- `label`
+- `split`
 
-`brain_mri_2d_demo.yaml` et certains fichiers de démo correspondent à un jeu synthétique pour valider l'architecture logicielle, pas à une source clinique réelle.
+This decouples training code from the original dataset folder structure.
 
-## 4. Futur recommandé
+## Important caveat
 
-Pour un projet plus sérieux de vision médicale MRI, la suite logique serait :
-- migration vers des volumes NIfTI ;
-- pipeline 3D ou 2.5D ;
-- segmentation + classification ;
-- éventuellement BraTS / MONAI.
+Heuristic image-mask matching is practical but not infallible. Always inspect the first rows of the generated manifest and visualize a few image/mask pairs before starting long experiments.

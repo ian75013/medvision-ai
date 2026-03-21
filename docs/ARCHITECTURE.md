@@ -1,41 +1,38 @@
 # Architecture
 
-## Overview
+## High-level components
 
-MedVision now exposes a single comparison surface for two problems:
+### Data layer
+- Kaggle download scripts for classification and segmentation datasets
+- segmentation manifest builder converting raw image-mask trees into CSV manifests
+- DVC stages to make each dataset flow reproducible
 
-- `chest_xray`: binary pneumonia classification
-- `brain_mri`: 4-class brain tumor MRI classification
+### Training layer
+- classification trainers for chest X-ray and brain MRI
+- multitask segmentation trainer using U-Net
+- MLflow logging in every training entry point
 
-The project is organized around four layers:
+### Serving layer
+- FastAPI registry-driven inference API
+- Streamlit comparison application
 
-1. **Training**
-   - `src/training/train.py` for chest X-ray
-   - `src/training/train_brain_mri.py` for brain MRI
-2. **Registry**
-   - `src/registry/model_registry.py` discovers trained models and metrics in `artifacts/`
-3. **Serving**
-   - `src/api/main.py` exposes `/models`, `/compare`, and `/predict`
-4. **UI**
-   - `streamlit_app.py` lets you compare metrics and run side-by-side predictions across models
+### MLOps layer
+- DVC for pipelines and remotes
+- MLflow for experiment tracking
+- Terraform for S3-backed DVC remote infrastructure
 
-## Artifact convention
+## Data flows
 
-The comparison layer relies on predictable artifact names:
+### Classification flow
+raw dataset -> TensorFlow dataset builder -> classifier -> metrics/report/model -> API/UI
 
-### Chest X-ray
-- `artifacts/models/baseline_model.keras`
-- `artifacts/models/optimized_model.keras`
-- `artifacts/reports/baseline_metrics.json` (optional)
-- `artifacts/reports/optimized_metrics.json` (optional)
+### Segmentation flow
+raw segmentation dataset -> manifest builder -> multitask U-Net -> mask metrics + class metrics + overlay -> API/UI
 
-### Brain MRI
-- `artifacts/models/brain_mri_baseline.keras`
-- `artifacts/models/brain_mri_optimized.keras`
-- `artifacts/reports/brain_mri_baseline_metrics.json` (optional)
-- `artifacts/reports/brain_mri_metrics.json`
+## Why multitask segmentation
 
-## Why a registry?
+The segmentation branch solves two objectives simultaneously:
+- localize the pathology with a dense mask,
+- recognize the image-level class.
 
-FastAPI and Streamlit should not hardcode a single model file anymore.
-The registry scans the artifact directories and produces one normalized view for both problems so the API and UI can stay aligned.
+This gives a better software demonstration than pure mask prediction alone and helps compare segmentation vs classification performance inside the same product.
