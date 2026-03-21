@@ -56,8 +56,20 @@ def _make_dataset(df: pd.DataFrame, image_size: int, batch_size: int, class_to_i
     return ds.batch(batch_size).prefetch(AUTOTUNE)
 
 
-def build_segmentation_datasets(manifest_path: str | Path, image_size: int, batch_size: int, validation_split: float = 0.2, seed: int = 42, task_type: str = 'multitask') -> Tuple[tf.data.Dataset, tf.data.Dataset, tf.data.Dataset, list[str]]:
+def build_segmentation_datasets(manifest_path: str | Path, image_size: int, batch_size: int, validation_split: float = 0.2, seed: int = 42, task_type: str = 'multitask'):
+    manifest_path = Path(manifest_path)
+
+    if not manifest_path.exists():
+        raise FileNotFoundError(f"Manifest not found: {manifest_path}")
+
+    if manifest_path.stat().st_size == 0:
+        raise ValueError(
+            f"Manifest is empty: {manifest_path}. "
+            "prepare_segmentation_dataset produced zero rows."
+        )
+
     df = pd.read_csv(manifest_path)
+
     if df.empty:
         raise ValueError(f'No rows found in manifest {manifest_path}')
     labels = sorted([l for l in df['label'].dropna().unique().tolist() if l != 'unknown'])
