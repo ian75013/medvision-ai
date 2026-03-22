@@ -76,6 +76,7 @@ Reproducibility path:
 - docs/COMPONENTS.md: module responsibilities and component boundaries.
 - docs/DATASETS.md: dataset contracts, manifest schema, validation checks.
 - docs/FASTAPI_STREAMLIT_ALIGNMENT.md: serving contract across API and UI.
+- docs/SEGMENTATION_UI_GUIDE.md: how to use segmentation in Streamlit, threshold tuning, and diagnostics.
 - docs/DVC_GUIDE.md: day-to-day DVC runbook, experiments, remotes, and troubleshooting.
 - docs/MLOPS_GUIDE.md: reproducibility and experiment lifecycle.
 - docs/OPERATIONS.md: runbook for setup, execution, and troubleshooting.

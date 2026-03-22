@@ -34,8 +34,12 @@ def _predict(problem: str, model_name: str, image_path: Path, mask_threshold: fl
             "confidence": confidence,
             "probabilities": probs,
             "metrics": model_entry.get("metrics", {}),
+            "mask_prob": seg.astype(np.float32),
             "mask": mask,
             "mask_foreground_ratio": float(mask.mean()),
+            "mask_prob_mean": float(np.mean(seg)),
+            "mask_prob_max": float(np.max(seg)),
+            "mask_prob_min": float(np.min(seg)),
             "image": image,
         }
     if model_entry["task_type"] == "binary":
@@ -244,6 +248,7 @@ with tab_predict:
                 prediction_rows = []
                 prob_rows = []
                 overlays = []
+                seg_debug_rows = []
 
                 with st.spinner("Running predictions..."):
                     for model_name in selected_models:
@@ -261,7 +266,17 @@ with tab_predict:
                         prob_row.update(result["probabilities"])
                         prob_rows.append(prob_row)
                         if "mask" in result:
-                            overlays.append((model_name, result["image"], result["mask"]))
+                            overlays.append((model_name, result["image"], result["mask"], result["mask_prob"]))
+                            seg_debug_rows.append(
+                                {
+                                    "model": model_name,
+                                    "threshold": float(mask_threshold),
+                                    "mask_foreground_ratio": float(result.get("mask_foreground_ratio", 0.0)),
+                                    "prob_mean": float(result.get("mask_prob_mean", 0.0)),
+                                    "prob_max": float(result.get("mask_prob_max", 0.0)),
+                                    "prob_min": float(result.get("mask_prob_min", 0.0)),
+                                }
+                            )
 
                 with right_col:
                     st.markdown("#### Prediction Cards")
@@ -289,18 +304,17 @@ with tab_predict:
 
                 if overlays:
                     st.markdown("#### Segmentation View")
-                    seg_rows = []
-                    for model_name, image, mask in overlays:
-                        seg_rows.append({
-                            "model": model_name,
-                            "mask_foreground_ratio": float(mask.mean()),
-                            "threshold": float(mask_threshold),
-                        })
-                    st.dataframe(pd.DataFrame(seg_rows), use_container_width=True)
+                    st.dataframe(pd.DataFrame(seg_debug_rows), use_container_width=True)
 
-                    for model_name, image, mask in overlays:
+                    if all(row["mask_foreground_ratio"] == 0.0 for row in seg_debug_rows):
+                        st.warning(
+                            "All binary masks are empty at the current threshold. "
+                            "Try lowering the threshold (for example 0.30 or 0.20) and inspect the probability map."
+                        )
+
+                    for model_name, image, mask, mask_prob in overlays:
                         st.markdown(f"##### {model_name}")
-                        c1, c2, c3 = st.columns([1, 1, 1.2])
+                        c1, c2, c3, c4 = st.columns([1, 1, 1.2, 1])
                         with c1:
                             st.caption("Preprocessed image")
                             st.image(image, use_container_width=True)
@@ -310,6 +324,9 @@ with tab_predict:
                         with c3:
                             st.caption("Overlay")
                             st.image(_blend_overlay(image, mask), use_container_width=True)
+                        with c4:
+                            st.caption("Probability map")
+                            st.image(mask_prob, clamp=True, use_container_width=True)
             finally:
                 tmp_path.unlink(missing_ok=True)
 
