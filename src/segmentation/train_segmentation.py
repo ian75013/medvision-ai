@@ -9,6 +9,7 @@ from pathlib import Path
 import mlflow
 import numpy as np
 import tensorflow as tf
+from sklearn.metrics import f1_score, precision_score, recall_score
 
 from src.segmentation.data import build_segmentation_datasets
 from src.segmentation.metrics import dice_coefficient_np, iou_np, pixel_accuracy_np, save_metrics
@@ -44,6 +45,18 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument('--config', required=True)
     parser.add_argument('--epochs', type=int, default=None)
     return parser.parse_args()
+
+
+def _log_history_metrics(history: dict[str, list[float]]) -> None:
+    for metric_name, values in history.items():
+        if not values:
+            continue
+        series = [float(v) for v in values]
+        mlflow.log_metric(f"final_{metric_name}", series[-1])
+        if "loss" in metric_name:
+            mlflow.log_metric(f"best_{metric_name}", float(min(series)))
+        else:
+            mlflow.log_metric(f"best_{metric_name}", float(max(series)))
 
 
 def main() -> None:
@@ -107,32 +120,67 @@ def main() -> None:
         })
         history = model.fit(train_ds, validation_data=val_ds, epochs=epochs, callbacks=callbacks, verbose=1)
 
-        batch = next(iter(test_ds))
-        if task_type == 'multitask':
-            batch_x, batch_y = batch
-            true_masks = batch_y['segmentation_output'].numpy()
-            class_true = batch_y['classification_output'].numpy()
-            preds = model.predict(batch_x, verbose=0)
-            pred_masks = preds['segmentation_output']
-            class_preds_raw = preds['classification_output']
-            if class_preds_raw.ndim == 1 or class_preds_raw.shape[-1] == 1:
-                class_preds = (class_preds_raw.reshape(-1) >= 0.5).astype(int)
-            else:
-                class_preds = np.argmax(class_preds_raw, axis=1)
-            class_acc = float(np.mean(class_preds == class_true))
-        else:
-            batch_x, true_masks = batch
-            pred_masks = model.predict(batch_x, verbose=0)
-            class_acc = None
+        all_true_masks: list[np.ndarray] = []
+        all_pred_masks: list[np.ndarray] = []
+        all_class_true: list[int] = []
+        all_class_pred: list[int] = []
 
-        pred_bin = (pred_masks >= 0.5).astype(np.float32)
+        sample_image = None
+        sample_mask = None
+
+        for batch in test_ds:
+            if task_type == 'multitask':
+                batch_x, batch_y = batch
+                true_masks = batch_y['segmentation_output'].numpy()
+                class_true = batch_y['classification_output'].numpy()
+                preds = model.predict(batch_x, verbose=0)
+                pred_masks = preds['segmentation_output']
+                class_preds_raw = preds['classification_output']
+                if class_preds_raw.ndim == 1 or class_preds_raw.shape[-1] == 1:
+                    class_preds = (class_preds_raw.reshape(-1) >= 0.5).astype(int)
+                else:
+                    class_preds = np.argmax(class_preds_raw, axis=1)
+                all_class_true.extend(class_true.astype(int).tolist())
+                all_class_pred.extend(class_preds.astype(int).tolist())
+            else:
+                batch_x, true_masks = batch
+                pred_masks = model.predict(batch_x, verbose=0)
+
+            pred_bin = (pred_masks >= 0.5).astype(np.float32)
+            all_true_masks.append(true_masks.astype(np.float32))
+            all_pred_masks.append(pred_bin.astype(np.float32))
+
+            if sample_image is None:
+                sample_image = batch_x[0].numpy()
+                sample_mask = pred_bin[0, ..., 0]
+
+        true_masks_arr = np.concatenate(all_true_masks, axis=0)
+        pred_masks_arr = np.concatenate(all_pred_masks, axis=0)
+
         metrics = {
-            'dice': dice_coefficient_np(true_masks, pred_bin),
-            'iou': iou_np(true_masks, pred_bin),
-            'pixel_accuracy': pixel_accuracy_np(true_masks, pred_bin),
+            'dice': dice_coefficient_np(true_masks_arr, pred_masks_arr),
+            'iou': iou_np(true_masks_arr, pred_masks_arr),
+            'pixel_accuracy': pixel_accuracy_np(true_masks_arr, pred_masks_arr),
         }
-        if class_acc is not None:
-            metrics['classification_accuracy'] = class_acc
+        true_mask_flat = (true_masks_arr > 0.5).reshape(-1).astype(int)
+        pred_mask_flat = (pred_masks_arr > 0.5).reshape(-1).astype(int)
+        metrics['mask_precision'] = float(precision_score(true_mask_flat, pred_mask_flat, zero_division=0))
+        metrics['mask_recall'] = float(recall_score(true_mask_flat, pred_mask_flat, zero_division=0))
+        metrics['mask_f1'] = float(f1_score(true_mask_flat, pred_mask_flat, zero_division=0))
+        if all_class_true:
+            class_true_arr = np.array(all_class_true)
+            class_pred_arr = np.array(all_class_pred)
+            metrics['classification_accuracy'] = float(np.mean(class_pred_arr == class_true_arr))
+            avg_type = 'binary' if len(class_names) <= 2 else 'macro'
+            metrics['classification_precision'] = float(
+                precision_score(class_true_arr, class_pred_arr, average=avg_type, zero_division=0)
+            )
+            metrics['classification_recall'] = float(
+                recall_score(class_true_arr, class_pred_arr, average=avg_type, zero_division=0)
+            )
+            metrics['classification_f1'] = float(
+                f1_score(class_true_arr, class_pred_arr, average=avg_type, zero_division=0)
+            )
 
         prefix = cfg.get('artifact_prefix', Path(args.config).stem)
         model_path = model_dir / f'{prefix}.keras'
@@ -146,14 +194,17 @@ def main() -> None:
         history_payload.update({k: [float(v) for v in vals] for k, vals in history.history.items()})
         history_path.write_text(json.dumps(history_payload, indent=2), encoding='utf-8')
 
-        save_overlay(batch_x[0].numpy(), pred_bin[0, ..., 0], overlay_path)
+        if sample_image is not None and sample_mask is not None:
+            save_overlay(sample_image, sample_mask, overlay_path)
 
         mlflow.log_artifact(str(model_path))
         mlflow.log_artifact(str(metrics_path))
         mlflow.log_artifact(str(history_path))
-        mlflow.log_artifact(str(overlay_path))
+        if overlay_path.exists():
+            mlflow.log_artifact(str(overlay_path))
         for k, v in metrics.items():
             mlflow.log_metric(k, float(v))
+        _log_history_metrics(history.history)
         print(json.dumps(metrics, indent=2))
 
 
