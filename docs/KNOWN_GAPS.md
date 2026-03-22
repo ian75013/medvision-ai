@@ -1,50 +1,98 @@
-# Known gaps and technical debt
+# Known Gaps
 
-## 1. Deux lignes de produit cohabitent
+This document tracks current limitations and practical mitigation guidance.
 
-Le dépôt contient à la fois :
-- un flux historique **chest X-ray** ;
-- un flux récent **brain MRI**.
+## 1. Data and labeling limitations
 
-Cela rend la lecture moins immédiate pour un nouveau contributeur.
+### 1.1 Heuristic segmentation matching
 
-## 2. Modules de modèles historiques manquants dans ce zip
+Gap:
 
-Les scripts historiques `src/training/train.py` et `src/training/train_brain_mri.py` importent :
-- `src.models.baseline_model`
-- `src.models.optimized_model`
+- Segmentation manifest generation relies on filename and path heuristics.
 
-Or le dossier `src/models/` n'est pas présent dans cette archive. Cela signifie que :
-- le dépôt n'est pas entièrement auto-cohérent dans l'état du zip ;
-- la partie Brain MRI est conceptuellement la plus pertinente, mais nécessiterait soit la restauration de `src/models/`, soit une refactorisation pour utiliser uniquement les modèles définis localement.
+Impact:
 
-## 3. Serving pas encore aligné avec Brain MRI
+- Incorrect image/mask pairing can degrade training quality and qualitative overlays.
 
-- `src/api/main.py` charge un modèle historique `optimized_model.keras`
-- `streamlit_app.py` parle encore de chest X-ray / pneumonia
+Current mitigation:
 
-Pour une cohérence produit, il faudrait :
-- une API Brain MRI dédiée ;
-- une UI Brain MRI dédiée ;
-- une convention de nommage des modèles plus claire.
+- Visual validation of random manifest samples before long runs.
 
-## 4. DVC minimal
+### 1.2 Annotation quality dependency
 
-Le pipeline DVC actuel est utile mais reste minimal. Une version plus robuste devrait séparer :
-- `download`
-- `prepare`
-- `train`
-- `evaluate`
-- `package`
+Gap:
 
-## 5. MRI encore 2D Kaggle
+- Class semantics and mask quality depend on source dataset annotations.
 
-Le dépôt montre une bonne base de travail, mais il ne s'agit pas encore d'une stack IRM volumique clinique complète.
+Impact:
 
-## 6. Recommandation prioritaire
+- Reported model metrics may reflect dataset noise more than model limitations.
 
-Si tu veux rendre le dépôt plus propre rapidement :
-1. recréer `src/models/` ou adapter les scripts pour supprimer ces imports ;
-2. créer une API/UI Brain MRI ;
-3. isoler le flux chest X-ray dans un sous-dossier ou une branche ;
-4. enrichir le pipeline DVC.
+Current mitigation:
+
+- Keep dataset provenance explicit and compare multiple runs before conclusions.
+
+## 2. Modeling and scope limitations
+
+### 2.1 2D segmentation only
+
+Gap:
+
+- Current segmentation implementation is 2D TensorFlow/Keras.
+
+Impact:
+
+- Limited representation for full volumetric MRI segmentation use cases.
+
+Current mitigation:
+
+- Position current results as 2D baselines and avoid over-claiming volumetric capability.
+
+### 2.2 Limited post-training lifecycle features
+
+Gap:
+
+- No active learning loop and no continuous production monitoring pipeline.
+
+Impact:
+
+- Reduced feedback loops after deployment-style serving.
+
+Current mitigation:
+
+- Manual review in MLflow and Streamlit after each experiment cycle.
+
+## 3. Operational limitations
+
+### 3.1 Artifact naming sensitivity
+
+Gap:
+
+- Registry discovery depends on expected artifact naming conventions.
+
+Impact:
+
+- Valid models may not appear in API/UI if names drift from registry candidates.
+
+Current mitigation:
+
+- Keep artifact names stable and update registry definitions when introducing new models.
+
+## 4. Recommended roadmap
+
+Short-term improvements:
+
+1. Add stricter manifest validation reports.
+2. Add lightweight contract checks between registry and artifact outputs.
+3. Add smoke tests for API/UI parity on at least one model per task.
+
+Mid-term improvements:
+
+1. Introduce optional curated mapping files for segmentation pairing.
+2. Add richer error reporting for missing artifact contracts.
+3. Add basic monitoring hooks for inference requests and outputs.
+
+Long-term improvements:
+
+1. Evaluate volumetric 3D segmentation path for MRI tracks.
+2. Introduce active learning and drift-aware retraining loops.

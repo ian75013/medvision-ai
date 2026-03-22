@@ -7,6 +7,7 @@ import random
 import mlflow
 import numpy as np
 import tensorflow as tf
+from sklearn.metrics import classification_report, log_loss
 from sklearn.utils.class_weight import compute_class_weight
 
 from src.evaluation.metrics_multiclass import (
@@ -82,6 +83,18 @@ def _build_model(model_name: str, image_size: int, learning_rate: float, num_cla
     return model
 
 
+def _log_history_metrics(history: dict[str, list[float]]) -> None:
+    for metric_name, values in history.items():
+        if not values:
+            continue
+        series = [float(v) for v in values]
+        mlflow.log_metric(f"final_{metric_name}", series[-1])
+        if "loss" in metric_name:
+            mlflow.log_metric(f"best_{metric_name}", float(min(series)))
+        else:
+            mlflow.log_metric(f"best_{metric_name}", float(max(series)))
+
+
 def main() -> None:
     args = parse_args()
     cfg = load_config(args.config)
@@ -147,16 +160,28 @@ def main() -> None:
 
         y_true = []
         y_pred = []
+        y_prob = []
         for batch_x, batch_y in test_ds:
             probs = model.predict(batch_x, verbose=0)
             preds = np.argmax(probs, axis=1)
+            y_prob.extend(probs.tolist())
             y_pred.extend(preds.tolist())
             y_true.extend(batch_y.numpy().astype(int).tolist())
 
         y_true_arr = np.array(y_true)
         y_pred_arr = np.array(y_pred)
+        y_prob_arr = np.array(y_prob)
         metrics = evaluate_multiclass_predictions(y_true_arr, y_pred_arr, class_names)
         report = build_multiclass_report(y_true_arr, y_pred_arr, class_names)
+        report_dict = classification_report(y_true_arr, y_pred_arr, target_names=class_names, zero_division=0, output_dict=True)
+
+        top2_pred = np.argsort(y_prob_arr, axis=1)[:, -2:]
+        top2_hits = np.array([int(t in row) for t, row in zip(y_true_arr.tolist(), top2_pred.tolist())])
+        metrics["top2_accuracy"] = float(np.mean(top2_hits))
+        try:
+            metrics["log_loss"] = float(log_loss(y_true_arr, y_prob_arr, labels=np.arange(num_classes)))
+        except ValueError:
+            metrics["log_loss"] = 0.0
 
         model_path = model_dir / f"brain_mri_{args.model}.keras"
         report_path = reports_dir / f"brain_mri_{args.model}_classification_report.txt"
@@ -182,6 +207,13 @@ def main() -> None:
         for k, v in metrics.items():
             if isinstance(v, (int, float)):
                 mlflow.log_metric(k, float(v))
+        _log_history_metrics(history.history)
+        for class_idx, class_weight in class_weights.items():
+            mlflow.log_metric(f"class_weight_{class_idx}", float(class_weight))
+        for class_name in class_names:
+            cls_stats = report_dict.get(class_name, {})
+            if "f1-score" in cls_stats:
+                mlflow.log_metric(f"{class_name}_f1".replace(" ", "_"), float(cls_stats["f1-score"]))
 
         print("Training complete")
         print(json.dumps(metrics, indent=2))

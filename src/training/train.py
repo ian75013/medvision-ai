@@ -8,6 +8,7 @@ from pathlib import Path
 import mlflow
 import numpy as np
 import tensorflow as tf
+from sklearn.metrics import classification_report
 from sklearn.utils.class_weight import compute_class_weight
 
 from src.evaluation.metrics import build_classification_report, evaluate_predictions, save_confusion_matrix
@@ -37,6 +38,18 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--model", type=str, choices=["baseline", "optimized"], default="baseline")
     parser.add_argument("--epochs", type=int, default=None)
     return parser.parse_args()
+
+
+def _log_history_metrics(history: dict[str, list[float]]) -> None:
+    for metric_name, values in history.items():
+        if not values:
+            continue
+        series = [float(v) for v in values]
+        mlflow.log_metric(f"final_{metric_name}", series[-1])
+        if "loss" in metric_name:
+            mlflow.log_metric(f"best_{metric_name}", float(min(series)))
+        else:
+            mlflow.log_metric(f"best_{metric_name}", float(max(series)))
 
 
 def main() -> None:
@@ -124,9 +137,26 @@ def main() -> None:
         y_prob_arr = np.array(y_prob)
         metrics = evaluate_predictions(y_true_arr, y_prob_arr)
         report = build_classification_report(y_true_arr, y_prob_arr)
+        report_dict = classification_report(
+            y_true_arr,
+            (y_prob_arr >= 0.5).astype(int),
+            target_names=["NORMAL", "PNEUMONIA"],
+            zero_division=0,
+            output_dict=True,
+        )
 
         for key, value in metrics.items():
             mlflow.log_metric(key, value)
+        _log_history_metrics(history.history)
+        mlflow.log_metric("class_weight_0", float(class_weights.get(0, 1.0)))
+        mlflow.log_metric("class_weight_1", float(class_weights.get(1, 1.0)))
+        for cls_name in ["NORMAL", "PNEUMONIA"]:
+            cls_stats = report_dict.get(cls_name, {})
+            for stat_key in ["precision", "recall", "f1-score"]:
+                if stat_key in cls_stats:
+                    mlflow.log_metric(f"{cls_name.lower()}_{stat_key.replace('-', '_')}", float(cls_stats[stat_key]))
+        if "macro avg" in report_dict:
+            mlflow.log_metric("macro_f1", float(report_dict["macro avg"].get("f1-score", 0.0)))
 
         model_path = model_dir / f"{args.model}_model.keras"
         model.save(model_path)

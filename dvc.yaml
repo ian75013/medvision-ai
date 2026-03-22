@@ -12,16 +12,12 @@ stages:
       - src/training/train.py
       - src/utils/dataset.py
       - src/evaluation/metrics.py
-      - src/evaluation/metrics_multiclass.py
+      - src/models/baseline_model.py
+      - src/models/optimized_model.py
       - configs/config.yaml
       - data/raw/chest_xray
     params:
-      - chest_xray.seed
-      - chest_xray.image_size
-      - chest_xray.batch_size
-      - chest_xray.epochs
-      - chest_xray.learning_rate
-      - chest_xray.validation_split
+      - chest_xray
     outs:
       - artifacts/models/optimized_model.keras
       - artifacts/reports/optimized_classification_report.txt
@@ -30,14 +26,6 @@ stages:
     metrics:
       - artifacts/reports/optimized_metrics.json:
           cache: false
-    plots:
-      - artifacts/reports/optimized_history.json:
-          x: epoch
-          y:
-            - accuracy
-            - val_accuracy
-            - loss
-            - val_loss
 
   download_brain_mri:
     cmd: python -m src.data.download_brain_mri_dataset --config configs/brain_tumor_mri.yaml
@@ -53,27 +41,97 @@ stages:
       - src/training/train_brain_mri.py
       - src/utils/dataset_multiclass.py
       - src/evaluation/metrics_multiclass.py
+      - src/models/baseline_model.py
+      - src/models/optimized_model.py
       - configs/brain_tumor_mri.yaml
       - data/raw/brain_tumor_mri
     params:
-      - brain_mri.seed
-      - brain_mri.image_size
-      - brain_mri.batch_size
-      - brain_mri.epochs
-      - brain_mri.learning_rate
-      - brain_mri.validation_split
+      - brain_mri
     outs:
       - artifacts/models/brain_mri_optimized.keras
       - artifacts/reports/brain_mri_optimized_classification_report.txt
       - artifacts/reports/brain_mri_optimized_confusion_matrix.png
+      - artifacts/reports/brain_mri_optimized_history.json
     metrics:
       - artifacts/reports/brain_mri_metrics.json:
           cache: false
-    plots:
-      - artifacts/reports/brain_mri_optimized_history.json:
-          x: epoch
-          y:
-            - accuracy
-            - val_accuracy
-            - loss
-            - val_loss
+
+  download_brain_tumor_segmentation:
+    cmd: python -m src.data.download_segmentation_dataset --problem brain_tumor_seg
+    deps:
+      - src/data/download_segmentation_dataset.py
+    outs:
+      - data/raw/brain_tumor_segmentation
+
+  prepare_brain_tumor_segmentation:
+    cmd: python -m src.data.prepare_segmentation_dataset --config configs/brain_tumor_segmentation.yaml
+    deps:
+      - src/data/prepare_segmentation_dataset.py
+      - src/segmentation/datasets/manifest.py
+      - configs/brain_tumor_segmentation.yaml
+      - data/raw/brain_tumor_segmentation
+    outs:
+      - data/processed/brain_tumor_segmentation/manifest.csv
+    metrics:
+      - artifacts/reports/brain_tumor_segmentation_dataset_summary.json:
+          cache: false
+
+  train_brain_tumor_segmentation:
+    cmd: python -m src.segmentation.train_segmentation --config configs/brain_tumor_segmentation.yaml --epochs ${brain_tumor_segmentation.epochs}
+    deps:
+      - src/segmentation/train_segmentation.py
+      - src/segmentation/data.py
+      - src/segmentation/models/unet.py
+      - src/segmentation/metrics.py
+      - src/segmentation/overlays.py
+      - configs/brain_tumor_segmentation.yaml
+      - data/processed/brain_tumor_segmentation/manifest.csv
+    params:
+      - brain_tumor_segmentation
+    outs:
+      - artifacts/models/brain_tumor_segmentation_unet.keras
+      - artifacts/reports/brain_tumor_segmentation_unet_history.json
+      - artifacts/overlays/brain_tumor_segmentation_unet_sample_overlay.png
+    metrics:
+      - artifacts/reports/brain_tumor_segmentation_unet_metrics.json:
+          cache: false
+
+  download_chest_xray_segmentation:
+    cmd: python -m src.data.download_segmentation_dataset --problem chest_xray_seg
+    deps:
+      - src/data/download_segmentation_dataset.py
+    outs:
+      - data/raw/chest_xray_segmentation
+
+  prepare_chest_xray_segmentation:
+    cmd: python -m src.data.prepare_segmentation_dataset --config configs/chest_xray_segmentation.yaml
+    deps:
+      - src/data/prepare_segmentation_dataset.py
+      - src/segmentation/datasets/manifest.py
+      - configs/chest_xray_segmentation.yaml
+      - data/raw/chest_xray_segmentation
+    outs:
+      - data/processed/chest_xray_segmentation/manifest.csv
+    metrics:
+      - artifacts/reports/chest_xray_segmentation_dataset_summary.json:
+          cache: false
+
+  train_chest_xray_segmentation:
+    cmd: python -m src.segmentation.train_segmentation --config configs/chest_xray_segmentation.yaml --epochs ${chest_xray_segmentation.epochs}
+    deps:
+      - src/segmentation/train_segmentation.py
+      - src/segmentation/data.py
+      - src/segmentation/models/unet.py
+      - src/segmentation/metrics.py
+      - src/segmentation/overlays.py
+      - configs/chest_xray_segmentation.yaml
+      - data/processed/chest_xray_segmentation/manifest.csv
+    params:
+      - chest_xray_segmentation
+    outs:
+      - artifacts/models/chest_xray_segmentation_unet.keras
+      - artifacts/reports/chest_xray_segmentation_unet_history.json
+      - artifacts/overlays/chest_xray_segmentation_unet_sample_overlay.png
+    metrics:
+      - artifacts/reports/chest_xray_segmentation_unet_metrics.json:
+          cache: false

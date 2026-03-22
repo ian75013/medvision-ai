@@ -13,7 +13,7 @@ DEFAULT_ARTIFACTS_DIR = Path("artifacts")
 
 PROBLEMS: Dict[str, Dict[str, Any]] = {
     "chest_xray": {
-        "label": "Chest X-ray Pneumonia",
+        "label": "Chest X-ray Pneumonia Classification",
         "config_path": "configs/config.yaml",
         "model_candidates": {
             "baseline": "baseline_model.keras",
@@ -31,14 +31,15 @@ PROBLEMS: Dict[str, Dict[str, Any]] = {
         "task_type": "binary",
     },
     "brain_mri": {
-        "label": "Brain MRI Tumor",
+        "label": "Brain MRI Tumor Classification",
         "config_path": "configs/brain_tumor_mri.yaml",
         "model_candidates": {
             "baseline": "brain_mri_baseline.keras",
             "optimized": "brain_mri_optimized.keras",
         },
         "report_candidates": {
-            "optimized": "brain_mri_classification_report.txt",
+            "baseline": "brain_mri_baseline_classification_report.txt",
+            "optimized": "brain_mri_optimized_classification_report.txt",
         },
         "metrics_candidates": {
             "baseline": ["brain_mri_baseline_metrics.json"],
@@ -46,6 +47,30 @@ PROBLEMS: Dict[str, Dict[str, Any]] = {
         },
         "class_names": ["glioma", "meningioma", "notumor", "pituitary"],
         "task_type": "multiclass",
+    },
+    "brain_tumor_segmentation": {
+        "label": "Brain Tumor Segmentation + Classification",
+        "config_path": "configs/brain_tumor_segmentation.yaml",
+        "model_candidates": {
+            "unet_multitask": "brain_tumor_segmentation_unet.keras",
+        },
+        "metrics_candidates": {
+            "unet_multitask": ["brain_tumor_segmentation_unet_metrics.json"],
+        },
+        "class_names": ["glioma", "meningioma", "pituitary", "notumor"],
+        "task_type": "segmentation_multitask",
+    },
+    "chest_xray_segmentation": {
+        "label": "Chest X-ray Lung Segmentation + Pneumonia Classification",
+        "config_path": "configs/chest_xray_segmentation.yaml",
+        "model_candidates": {
+            "unet_multitask": "chest_xray_segmentation_unet.keras",
+        },
+        "metrics_candidates": {
+            "unet_multitask": ["chest_xray_segmentation_unet_metrics.json"],
+        },
+        "class_names": ["NORMAL", "PNEUMONIA"],
+        "task_type": "segmentation_multitask",
     },
 }
 
@@ -61,6 +86,8 @@ def _load_json(path: Path) -> Dict[str, Any]:
 
 def _find_first_existing(directory: Path, names: List[str] | tuple[str, ...]) -> Path | None:
     for name in names:
+        if not name:
+            continue
         candidate = directory / name
         if candidate.exists():
             return candidate
@@ -101,7 +128,7 @@ def load_registry(artifacts_dir: str | Path = DEFAULT_ARTIFACTS_DIR) -> Dict[str
 
 @lru_cache(maxsize=16)
 def load_tf_model(model_path: str) -> tf.keras.Model:
-    return tf.keras.models.load_model(model_path)
+    return tf.keras.models.load_model(model_path, compile=False)
 
 
 def get_model_entry(problem: str, model_name: str, artifacts_dir: str | Path = DEFAULT_ARTIFACTS_DIR) -> Dict[str, Any]:

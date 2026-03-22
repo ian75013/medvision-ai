@@ -10,7 +10,24 @@ from fastapi import FastAPI, File, HTTPException, Query, UploadFile
 from src.preprocessing.image_loader import load_and_preprocess_image
 from src.registry.model_registry import compare_models, get_model_entry, load_registry, load_tf_model
 
-app = FastAPI(title="MedVision AI API", version="2.0.0")
+app = FastAPI(title="MedVision AI API", version="3.0.0")
+
+
+def _classification_payload(raw: np.ndarray, model_entry: Dict[str, Any]) -> Dict[str, Any]:
+    class_names = model_entry["class_names"]
+    task_type = model_entry["task_type"]
+    if task_type == "binary":
+        probability = float(raw[0]) if np.ndim(raw) > 0 else float(raw)
+        predicted_class = class_names[1] if probability >= 0.5 else class_names[0]
+        probabilities = {class_names[0]: float(1.0 - probability), class_names[1]: float(probability)}
+        confidence = max(probabilities.values())
+    else:
+        probs = np.asarray(raw, dtype=float)
+        pred_idx = int(np.argmax(probs))
+        predicted_class = class_names[pred_idx]
+        probabilities = {name: float(probs[i]) for i, name in enumerate(class_names)}
+        confidence = float(probs[pred_idx])
+    return {"predicted_class": predicted_class, "confidence": confidence, "probabilities": probabilities}
 
 
 def _predict_with_entry(model_entry: Dict[str, Any], image_path: Path, image_size: int = 224) -> Dict[str, Any]:
@@ -21,34 +38,23 @@ def _predict_with_entry(model_entry: Dict[str, Any], image_path: Path, image_siz
     model = load_tf_model(str(model_path.resolve()))
     image = load_and_preprocess_image(image_path, image_size=image_size)
     batch = np.expand_dims(image, axis=0)
-    raw = model.predict(batch, verbose=0)[0]
+    raw = model.predict(batch, verbose=0)
 
-    class_names = model_entry["class_names"]
-    task_type = model_entry["task_type"]
-    if task_type == "binary":
-        probability = float(raw[0]) if np.ndim(raw) > 0 else float(raw)
-        predicted_class = class_names[1] if probability >= 0.5 else class_names[0]
-        probabilities = {
-            class_names[0]: float(1.0 - probability),
-            class_names[1]: float(probability),
+    if model_entry["task_type"] == "segmentation_multitask":
+        if not isinstance(raw, dict):
+            raise HTTPException(status_code=500, detail="Expected a multitask segmentation model returning a dict.")
+        mask = raw["segmentation_output"][0, ..., 0]
+        pred_mask = (mask >= 0.5).astype(np.uint8)
+        cls_raw = raw["classification_output"][0]
+        class_payload = _classification_payload(cls_raw, {**model_entry, "task_type": "binary" if len(model_entry["class_names"]) == 2 else "multiclass"})
+        return {
+            **class_payload,
+            "mask_foreground_ratio": float(pred_mask.mean()),
+            "mask_shape": list(pred_mask.shape),
         }
-        confidence = max(probabilities.values())
-    else:
-        probs = np.asarray(raw, dtype=float)
-        pred_idx = int(np.argmax(probs))
-        predicted_class = class_names[pred_idx]
-        probabilities = {name: float(probs[i]) for i, name in enumerate(class_names)}
-        confidence = float(probs[pred_idx])
 
-    return {
-        "predicted_class": predicted_class,
-        "confidence": confidence,
-        "probabilities": probabilities,
-        "model_metadata": {
-            "metrics": model_entry.get("metrics", {}),
-            "model_path": model_entry["model_path"],
-        },
-    }
+    raw = raw[0]
+    return _classification_payload(raw, model_entry)
 
 
 @app.get("/health")
@@ -72,7 +78,7 @@ def list_models(problem: str | None = Query(default=None)) -> dict[str, Any]:
 
 
 @app.get("/compare")
-def compare(problem: str = Query(..., description="Problem id: chest_xray or brain_mri")) -> dict[str, Any]:
+def compare(problem: str = Query(..., description="Problem id")) -> dict[str, Any]:
     try:
         return {"problem": problem, "rows": compare_models(problem)}
     except KeyError as exc:
@@ -82,8 +88,8 @@ def compare(problem: str = Query(..., description="Problem id: chest_xray or bra
 @app.post("/predict")
 async def predict(
     file: UploadFile = File(...),
-    problem: str = Query(..., description="Problem id: chest_xray or brain_mri"),
-    model_name: str = Query(..., description="Model id: baseline or optimized"),
+    problem: str = Query(..., description="Problem id"),
+    model_name: str = Query(..., description="Model id"),
 ) -> Dict[str, Any]:
     if not file.filename:
         raise HTTPException(status_code=400, detail="No file provided")
@@ -100,11 +106,7 @@ async def predict(
         tmp_path = Path(tmp.name)
 
     try:
-        result = _predict_with_entry(model_entry, tmp_path)
-        return {
-            "problem": problem,
-            "model_name": model_name,
-            **result,
-        }
+        result = _predict_with_entry(model_entry, tmp_path, image_size=256 if 'segmentation' in problem else 224)
+        return {"problem": problem, "model_name": model_name, **result, "model_metadata": {"metrics": model_entry.get("metrics", {}), "model_path": model_entry["model_path"]}}
     finally:
         tmp_path.unlink(missing_ok=True)
