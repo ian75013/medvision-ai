@@ -1,0 +1,38 @@
+name: CI Test Suite
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  current-test-suite:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+          cache: 'pip'
+          cache-dependency-path: |
+            requirements/base.txt
+            requirements/ci-full.txt
+
+      - name: Install intermediate CI dependencies
+        run: |
+          python -m pip install --upgrade pip setuptools wheel
+          pip install -r requirements/ci-full.txt
+
+      - name: Run full current test folder
+        env:
+          PYTHONPATH: .
+          TF_CPP_MIN_LOG_LEVEL: '2'
+        run: |
+          pytest -q tests
