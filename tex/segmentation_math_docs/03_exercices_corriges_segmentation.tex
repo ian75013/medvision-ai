@@ -1,0 +1,87 @@
+\documentclass[11pt]{article}
+\input{common_preamble.tex}
+\begin{document}
+\coverpage{Exercices corrigés de segmentation}{Pour consolider les notions mathématiques}{Ce document propose des exercices courts mais structurants sur les masques, les métriques, les convolutions et les pertes. Il sert de support d'entraînement autonome pour réviser ou préparer un projet de vision médicale.}
+
+\section{Exercice 1 — Masque binaire}
+On considère une image $5\times 5$ et une région vraie composée de 6 pixels. Une prédiction en contient 8, dont 5 corrects.
+
+\textbf{Question.} Calculer précision, rappel, Dice et IoU.
+
+\textbf{Correction.}
+\[
+TP=5,\quad FP=8-5=3,\quad FN=6-5=1.
+\]
+Donc
+\[
+\mathrm{Pr\'ecision}=\frac{5}{8},
+\qquad
+\mathrm{Rappel}=\frac{5}{6},
+\qquad
+\mathrm{Dice}=\frac{2\cdot 5}{8+6}=\frac{10}{14}=\frac57,
+\]
+\[
+\mathrm{IoU}=\frac{5}{8+6-5}=\frac{5}{9}.
+\]
+
+\section{Exercice 2 — Cross-entropie binaire}
+Si le vrai label vaut $y=1$ et que la probabilité prédite vaut $p=0.9$, calculer la perte. Même question pour $p=0.1$.
+
+\textbf{Correction.}
+\[
+\ell=-\log(p).
+\]
+Donc
+\[
+\ell(0.9)\approx 0.105,
+\qquad
+\ell(0.1)\approx 2.303.
+\]
+Plus la probabilité attribuée à la bonne classe est faible, plus la perte explose.
+
+\section{Exercice 3 — Pourquoi les skip connections ?}
+\textbf{Question.} Expliquer sans formule lourde pourquoi un décodeur seul reconstruit mal les détails fins.
+
+\textbf{Correction.}
+Le bas du réseau a beaucoup de contexte mais peu de résolution. Une fois plusieurs opérations de pooling effectuées, l'information exacte sur les contours fins est partiellement perdue. Les skip connections réinjectent des détails spatiaux de haute résolution.
+
+\section{Exercice 4 — Lien entre Dice et IoU}
+Montrer que
+\[
+\mathrm{Dice}=\frac{2\,\mathrm{IoU}}{1+\mathrm{IoU}}.
+\]
+
+\textbf{Correction.}
+Posons $x=|A\cap B|$ et $u=|A\cup B|$. Alors
+\[
+\mathrm{IoU}=\frac{x}{u}.
+\]
+Or
+\[
+u=|A|+|B|-x \implies |A|+|B|=u+x.
+\]
+Donc
+\[
+\mathrm{Dice}=\frac{2x}{u+x}.
+\]
+Comme $x=\mathrm{IoU}\cdot u$, on obtient
+\[
+\mathrm{Dice}=\frac{2\,\mathrm{IoU}\,u}{u+\mathrm{IoU}\,u}=\frac{2\,\mathrm{IoU}}{1+\mathrm{IoU}}.
+\]
+
+\section{Exercice 5 — Segmentation vs classification}
+\textbf{Question.} Pourquoi un modèle peut-il être excellent en classification et médiocre en segmentation ?
+
+\textbf{Correction.}
+Parce qu'il suffit parfois de repérer quelques indices globaux pour classifier correctement l'image, alors que segmenter exige une localisation précise pixel par pixel. La segmentation est donc plus exigeante géométriquement.
+
+\section{Mémo final}
+\begin{itemize}
+  \item Classification : sortie globale.
+  \item Segmentation : sortie spatiale.
+  \item CE : cohérence probabiliste locale.
+  \item Dice / IoU : qualité géométrique globale.
+  \item U-Net : combine vue globale et détails locaux.
+\end{itemize}
+
+\end{document}

@@ -1,0 +1,65 @@
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage[french]{babel}
+\usepackage{lmodern}
+\usepackage{microtype}
+\usepackage[a4paper,margin=2.2cm]{geometry}
+\usepackage{xcolor}
+\usepackage{amsmath,amssymb,amsfonts,amsthm,bm,mathtools}
+\usepackage{graphicx}
+\usepackage{booktabs,tabularx,array,multirow}
+\usepackage{enumitem}
+\usepackage{hyperref}
+\usepackage{fancyhdr}
+\usepackage{titlesec}
+\usepackage{tcolorbox}
+\usepackage{tikz}
+\usepackage{lastpage}
+\usepackage{float}
+\usepackage{caption}
+\hypersetup{colorlinks=true,linkcolor=MidnightBlue,urlcolor=MidnightBlue,citecolor=MidnightBlue,pdfauthor={Yann Sofian Smatti},pdftitle={Segmentation}}
+\definecolor{DeepBlue}{HTML}{153B6B}
+\definecolor{SoftBlue}{HTML}{EAF2FB}
+\definecolor{Accent}{HTML}{6C63FF}
+\definecolor{Warm}{HTML}{F2994A}
+\definecolor{Forest}{HTML}{1E8E5A}
+\definecolor{Charcoal}{HTML}{243447}
+\definecolor{MidnightBlue}{HTML}{1F4E79}
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{0.45em}
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\textcolor{DeepBlue}{\textbf{Segmentation d'images — notes L3 maths}}}
+\fancyhead[R]{\textcolor{DeepBlue}{\thepage/\pageref{LastPage}}}
+\fancyfoot[C]{\textcolor{Charcoal}{Doctum Consilium — support pédagogique}}
+\titleformat{\section}{\Large\bfseries\color{DeepBlue}}{\thesection}{0.6em}{}
+\titleformat{\subsection}{\large\bfseries\color{MidnightBlue}}{\thesubsection}{0.5em}{}
+\titleformat{\subsubsection}{\normalsize\bfseries\color{Charcoal}}{\thesubsubsection}{0.5em}{}
+\titlespacing*{\section}{0pt}{1.2em}{0.6em}
+\titlespacing*{\subsection}{0pt}{0.9em}{0.35em}
+\newtcolorbox{ideaBox}{colback=SoftBlue,colframe=DeepBlue,boxrule=0.8pt,arc=2mm,left=2mm,right=2mm,top=1.2mm,bottom=1.2mm}
+\newtcolorbox{mathBox}{colback=white,colframe=Accent,boxrule=0.8pt,arc=2mm,left=2mm,right=2mm,top=1.2mm,bottom=1.2mm}
+\newtcolorbox{warningBox}{colback=white,colframe=Warm,boxrule=0.8pt,arc=2mm,left=2mm,right=2mm,top=1.2mm,bottom=1.2mm}
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\1}{\mathbf{1}}
+\newcommand{\vect}[1]{\bm{#1}}
+\newcommand{\coverpage}[3]{%
+\begin{titlepage}
+\begin{tikzpicture}[remember picture,overlay]
+\fill[SoftBlue] (current page.south west) rectangle (current page.north east);
+\fill[DeepBlue] (current page.north west) rectangle ([yshift=-4.5cm]current page.north east);
+\fill[Accent!85] ([xshift=-3.2cm]current page.south east) rectangle (current page.south east);
+\end{tikzpicture}
+\vspace*{2cm}
+{\color{white}\fontsize{24}{28}\selectfont\bfseries #1\par}
+\vspace{0.6cm}
+{\color{white}\Large #2\par}
+\vfill
+\begin{tcolorbox}[colback=white,colframe=white,boxrule=0pt,arc=2mm,width=0.92\textwidth]
+\textbf{Objectif.} #3
+\end{tcolorbox}
+\vspace{0.8cm}
+{\large\textcolor{Charcoal}{Version pédagogique, niveau L3 mathématiques / ingénierie ML}}\par
+\vspace{0.3cm}
+{\textcolor{Charcoal}{Document ecrit par Yann Sofian Smatti}}\par
+\end{titlepage}}

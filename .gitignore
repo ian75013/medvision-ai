@@ -39,7 +39,6 @@ logs/
 *.synctex
 *.synctex.gz
 *.npy
-*.tex
 _MACOSX/
 .DS_Store/
 *.zip

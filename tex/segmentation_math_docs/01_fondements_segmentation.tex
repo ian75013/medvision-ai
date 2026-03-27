@@ -1,0 +1,288 @@
+\documentclass[11pt]{article}
+\input{common_preamble.tex}
+\begin{document}
+\coverpage{Fondements mathématiques de la segmentation d'images}{Intuition, formalisation et liens avec l'analyse}{Ce document explique, avec un niveau L3 maths, la différence entre classification, détection et segmentation, la géométrie discrète de l'image, les convolutions, les masques, les probabilités pixel par pixel, puis le passage vers les fonctions de coût et l'optimisation.}
+
+\tableofcontents
+\newpage
+
+\section{Pourquoi la segmentation est un problème mathématique intéressant}
+La segmentation consiste à attribuer une étiquette à chaque pixel d'une image. En classification, on résume toute l'image par une seule variable aléatoire discrète. En segmentation, on prédit au contraire un \emph{champ} de labels.
+
+Si une image est de taille $H\times W$, une classification produit par exemple un élément de $\{0,1,2,3\}$ alors qu'une segmentation produit un objet de dimension beaucoup plus grande, par exemple
+\[
+M \in \{0,1\}^{H\times W}
+\quad\text{ou}\quad
+M \in \{0,1,\dots,C-1\}^{H\times W}.
+\]
+
+\begin{ideaBox}
+\textbf{Idée intuitive.} Une classification répond à la question \og qu'y a-t-il globalement dans l'image ? \fg. Une segmentation répond à \og où cela se trouve-t-il exactement ? \fg.
+\end{ideaBox}
+
+Cette différence change tout : les données à manipuler, les fonctions de coût, la géométrie des sorties, les métriques, et même la manière d'interpréter l'erreur.
+
+\section{L'image comme objet mathématique discret}
+Une image en niveaux de gris peut être vue comme une application discrète
+\[
+I : \Omega \to \R,
+\qquad \Omega = \{1,\dots,H\}\times\{1,\dots,W\}.
+\]
+À chaque pixel $(i,j)$, on associe une intensité $I(i,j)$. Pour une image RGB, on a trois canaux :
+\[
+I : \Omega \to \R^3.
+\]
+
+Dans l'esprit de l'analyse, on peut voir l'image discrète comme un échantillonnage d'un signal continu. Le passage du monde continu au monde discret introduit deux idées essentielles :
+\begin{enumerate}[label=\arabic*)]
+  \item la \textbf{résolution}, c'est-à-dire le pas d'échantillonnage ;
+  \item la \textbf{localité}, car un pixel seul n'a souvent pas de sens sans son voisinage.
+\end{enumerate}
+
+\subsection{Voisinage et information locale}
+Si l'on considère un pixel $(i,j)$, l'information la plus naturelle est portée par son voisinage, par exemple un carré $3\times 3$ ou $5\times 5$. Cela justifie déjà l'idée de convolution : on veut agréger localement l'information.
+
+\begin{mathBox}
+Un voisinage carré de rayon $r$ autour de $(i,j)$ est
+\[
+\mathcal{N}_r(i,j)=\{(u,v)\in\Omega:\ |u-i|\le r,\ |v-j|\le r\}.
+\]
+\end{mathBox}
+
+\section{Masques et fonctions indicatrices}
+Un masque binaire s'interprète très bien en mathématiques comme une fonction indicatrice.
+
+Si $A\subset \Omega$ est la région d'intérêt, alors le masque est
+\[
+M(i,j)=\1_A(i,j)=
+\begin{cases}
+1 & \text{si } (i,j)\in A,\\
+0 & \text{sinon.}
+\end{cases}
+\]
+
+Pour un problème multiclasses, on peut écrire un masque sous forme d'application
+\[
+M : \Omega \to \{0,1,\dots,C-1\}.
+\]
+Une autre représentation très utilisée est le \emph{one-hot encoding} : pour chaque pixel $(i,j)$, on remplace la classe par un vecteur canonique de $\R^C$.
+
+\subsection{Exemple cerveau / thorax}
+Dans une IRM cérébrale, on peut vouloir distinguer
+\begin{itemize}
+  \item le fond,
+  \item la tumeur,
+  \item éventuellement plusieurs sous-régions de la tumeur.
+\end{itemize}
+Dans une radiographie thoracique, on peut vouloir segmenter
+\begin{itemize}
+  \item le poumon gauche,
+  \item le poumon droit,
+  \item des zones d'opacité liées à une pneumonie.
+\end{itemize}
+
+\section{De la convolution à la détection de formes}
+La convolution discrète d'une image $I$ par un noyau $K$ de taille $(2r+1)\times(2r+1)$ est donnée par
+\[
+(I * K)(i,j)=\sum_{u=-r}^{r}\sum_{v=-r}^{r} K(u,v)\, I(i-u,j-v).
+\]
+
+Cette formule exprime une idée simple : on remplace la valeur d'un pixel par une combinaison linéaire de son voisinage.
+
+\begin{ideaBox}
+\textbf{Interprétation intuitive.} Le noyau agit comme un testeur local. Certains noyaux détectent les contours, d'autres lissent, d'autres accentuent certaines directions.
+\end{ideaBox}
+
+\subsection{Pourquoi les convolutions sont adaptées aux images}
+Deux propriétés sont cruciales.
+
+\textbf{1. Localité.} Une structure visuelle est souvent définie localement.
+
+\textbf{2. Partage des poids.} Le même noyau est appliqué partout. C'est une hypothèse d'invariance par translation : un contour vertical reste un contour vertical quel que soit l'endroit.
+
+\begin{mathBox}
+Si un noyau possède $k\times k$ coefficients, alors le nombre de paramètres ne dépend pas de $H$ ni de $W$. C'est l'une des grandes forces des CNN.
+\end{mathBox}
+
+\section{Cartes de caractéristiques et composition de fonctions}
+Une couche convolutionnelle suivie d'une non-linéarité peut être vue comme une application
+\[
+\Phi(I)=\sigma(W*I+b),
+\]
+avec $W$ un ensemble de filtres, $b$ un biais et $\sigma$ une fonction non linéaire (ReLU par exemple).
+
+En composant plusieurs couches, on construit une application plus complexe
+\[
+I \mapsto \Phi_L\circ \cdots \circ \Phi_2 \circ \Phi_1(I).
+\]
+
+D'un point de vue mathématique, un réseau profond est donc une composition de transformations non linéaires paramétrées.
+
+\subsection{Pourquoi la profondeur aide}
+Les premières couches détectent souvent des motifs simples : bords, textures, transitions d'intensité. Les couches plus profondes combinent ces motifs pour produire des objets plus abstraits : forme arrondie, contour organique, région compacte, etc.
+
+\section{Segmentation comme estimation conditionnelle}
+On suppose que l'on observe une image $X$ et que l'on veut prédire un masque aléatoire $Y$. Le cœur du problème est d'approcher la loi conditionnelle
+\[
+\mathbb{P}(Y\mid X).
+\]
+
+Dans une segmentation binaire pixel par pixel, le modèle produit souvent une probabilité
+\[
+\hat p_{ij}=\mathbb{P}(Y_{ij}=1\mid X).
+\]
+La sortie brute du réseau avant sigmoid s'appelle un \emph{logit} et vaut $z_{ij}$. On pose alors
+\[
+\hat p_{ij}=\sigma(z_{ij})=\frac{1}{1+e^{-z_{ij}}}.
+\]
+
+Pour $C$ classes, on produit pour chaque pixel un vecteur de logits $(z_{ij}^{(1)},\dots,z_{ij}^{(C)})$ puis on applique un softmax
+\[
+\hat p_{ij}^{(c)}=\frac{e^{z_{ij}^{(c)}}}{\sum_{m=1}^C e^{z_{ij}^{(m)}}}.
+\]
+
+\begin{ideaBox}
+\textbf{Lecture intuitive.} Le réseau ne sort pas directement une frontière. Il sort d'abord, pixel par pixel, une estimation de confiance pour chaque classe. Le masque final apparaît ensuite après un seuillage ou un argmax.
+\end{ideaBox}
+
+\section{Perte entropique et maximum de vraisemblance}
+Si $y_{ij}\in\{0,1\}$ et $\hat p_{ij}\in(0,1)$, la perte de cross-entropie binaire au pixel est
+\[
+\ell_{ij} = -y_{ij}\log(\hat p_{ij})-(1-y_{ij})\log(1-\hat p_{ij}).
+\]
+La perte totale est souvent la moyenne sur tous les pixels.
+
+Cette quantité est profondément liée au maximum de vraisemblance : minimiser la cross-entropie revient à maximiser la probabilité du masque observé sous le modèle.
+
+\subsection{Problème du déséquilibre de classes}
+En segmentation médicale, la lésion occupe souvent une petite partie de l'image. Si 98\% des pixels appartiennent au fond, un modèle paresseux qui prédit toujours \og fond \fg{} peut déjà paraître performant avec une accuracy naïve.
+
+\begin{warningBox}
+\textbf{Conséquence.} L'accuracy pixel par pixel peut être trompeuse. Il faut des métriques qui regardent la région cible, comme Dice ou IoU.
+\end{warningBox}
+
+\section{Dice, IoU et géométrie des ensembles}
+Si $A$ est l'ensemble des pixels prédits positifs et $B$ l'ensemble des pixels réellement positifs, alors
+\[
+\mathrm{Dice}(A,B)=\frac{2|A\cap B|}{|A|+|B|},
+\qquad
+\mathrm{IoU}(A,B)=\frac{|A\cap B|}{|A\cup B|}.
+\]
+
+\subsection{Interprétation géométrique}
+Ces quantités mesurent la superposition entre deux ensembles.
+
+\begin{itemize}
+  \item Dice favorise la superposition relative.
+  \item IoU pénalise plus fortement les débordements car l'union apparaît au dénominateur.
+\end{itemize}
+
+On peut montrer le lien
+\[
+\mathrm{Dice}=\frac{2\,\mathrm{IoU}}{1+\mathrm{IoU}}.
+\]
+
+\begin{mathBox}
+\textbf{Preuve rapide.}
+Si $J=\mathrm{IoU}=\frac{|A\cap B|}{|A\cup B|}$ et si
+$|A\cup B|=|A|+|B|-|A\cap B|$, alors
+\[
+J=\frac{|A\cap B|}{|A|+|B|-|A\cap B|}.
+\]
+En isolant $|A\cap B|$ puis en remplaçant dans la formule de Dice, on obtient bien
+\[
+\mathrm{Dice}=\frac{2J}{1+J}.
+\]
+\end{mathBox}
+
+\section{Version différentiable de Dice}
+Pour entraîner un réseau, on a besoin d'une version différentiable. On remplace donc les ensembles par des probabilités. Pour un masque vrai $y_{ij}\in\{0,1\}$ et une prédiction probabiliste $p_{ij}$, on définit par exemple
+\[
+\mathrm{Dice}_{\mathrm{soft}}(p,y)=\frac{2\sum_{ij} p_{ij}y_{ij}+\varepsilon}{\sum_{ij} p_{ij}+\sum_{ij} y_{ij}+\varepsilon}.
+\]
+La Dice loss est alors
+\[
+\mathcal{L}_{\mathrm{Dice}}=1-\mathrm{Dice}_{\mathrm{soft}}.
+\]
+
+Cette écriture est très instructive : le numérateur récompense l'alignement entre probabilité prédite et vérité, tandis que le dénominateur normalise par la taille des régions.
+
+\section{Pourquoi U-Net fonctionne bien}
+Le succès de U-Net vient d'une idée géométrique simple : il faut à la fois du contexte global et de la précision locale.
+
+\subsection{Chemin contractant et chemin expansif}
+Le chemin contractant augmente la profondeur des features et réduit la résolution. Il capture le contexte et les structures globales.
+
+Le chemin expansif reconstruit une sortie à haute résolution.
+
+Les \emph{skip connections} relient les couches de même échelle pour réinjecter l'information fine perdue par sous-échantillonnage.
+
+\begin{ideaBox}
+\textbf{Image mentale.} Le bas du U voit loin mais de façon grossière. Le haut du U voit précisément mais localement. Les connexions de saut réconcilient ces deux visions.
+\end{ideaBox}
+
+\section{Segmentation, optimisation et descente de gradient}
+Les paramètres du réseau sont regroupés dans un vecteur $\theta$. On minimise une fonction de coût
+\[
+\mathcal{J}(\theta)=\frac{1}{N}\sum_{n=1}^N \mathcal{L}(f_\theta(X_n),Y_n).
+\]
+
+L'algorithme de base est la descente de gradient
+\[
+\theta_{t+1}=\theta_t-\eta\nabla \mathcal{J}(\theta_t),
+\]
+où $\eta>0$ est le taux d'apprentissage.
+
+En pratique, on utilise des mini-batchs et des variantes comme Adam. Le gradient est calculé par rétropropagation.
+
+\subsection{Pourquoi le problème est non convexe}
+La fonction $\mathcal{J}$ dépend d'une composition de nombreuses transformations non linéaires. On ne cherche donc pas une formule fermée, mais une bonne solution numérique.
+
+\section{Régularisation et généralisation}
+Un modèle doit bien se comporter sur des images jamais vues.
+
+Principales techniques :
+\begin{itemize}
+  \item augmentation de données ;
+  \item dropout ;
+  \item weight decay ;
+  \item early stopping ;
+  \item validation croisée si le dataset est petit.
+\end{itemize}
+
+L'augmentation de données a une interprétation mathématique simple : on enrichit l'échantillon observé par des transformations supposées préserver le label (rotations faibles, symétries, variations d'intensité, etc.).
+
+\section{Ce qu'un étudiant de L3 maths doit retenir}
+\begin{enumerate}[label=\arabic*)]
+  \item Une image est une fonction discrète, pas juste une photo.
+  \item Un masque est une fonction indicatrice ou une application à valeurs finies.
+  \item Les convolutions sont des opérateurs linéaires locaux.
+  \item Le réseau profond compose ces opérateurs avec des non-linéarités.
+  \item La segmentation consiste à estimer une variable aléatoire à chaque pixel.
+  \item Les métriques pertinentes comparent des ensembles : intersection, union, recouvrement.
+  \item U-Net marche parce qu'il combine contexte global et détail local.
+\end{enumerate}
+
+\section{Mini-exercices}
+\subsection*{Exercice 1}
+Montrer que si la prédiction est parfaite, alors Dice et IoU valent $1$.
+
+\subsection*{Exercice 2}
+Soit une image $4\times 4$ avec une région vraie de 4 pixels et une région prédite de 5 pixels, dont 3 pixels sont corrects. Calculer Dice et IoU.
+
+\subsection*{Exercice 3}
+Expliquer pourquoi la cross-entropie binaire pixel par pixel peut être insuffisante quand la région à segmenter est très petite.
+
+\subsection*{Réponses rapides}
+Exercice 2 :
+\[
+|A\cap B|=3,\quad |A|=5,\quad |B|=4,
+\]
+Donc
+\[
+\mathrm{Dice}=\frac{2\cdot 3}{5+4}=\frac{6}{9}=\frac23,
+\qquad
+\mathrm{IoU}=\frac{3}{5+4-3}=\frac{3}{6}=\frac12.
+\]
+
+\end{document}
