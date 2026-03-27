@@ -1,0 +1,377 @@
+\documentclass[11pt]{article}
+
+\usepackage{amsmath}
+\usepackage{amsfonts}
+\usepackage{graphicx}
+\usepackage{hyperref}
+\usepackage{physics}
+
+\title{Computer Vision Algorithms Used in the MedVision AI Project}
+\author{Yann Sofian Smatti}
+\date{}
+
+\begin{document}
+
+\maketitle
+
+\tableofcontents
+
+\newpage
+
+\section{Introduction}
+
+Computer Vision aims to allow machines to understand visual data.
+In the medical domain, this includes analyzing radiography, MRI, CT scans,
+and other diagnostic images.
+
+In this project we rely mainly on:
+
+\begin{itemize}
+\item Convolutional Neural Networks
+\item Transfer Learning
+\item Image Preprocessing
+\item Explainable AI
+\end{itemize}
+
+\section{Mathematical Representation of Images}
+
+A digital image can be represented as a matrix.
+
+For a grayscale image:
+
+\[
+I \in \mathbb{R}^{H \times W}
+\]
+
+where
+
+\begin{itemize}
+\item $H$ = height
+\item $W$ = width
+\end{itemize}
+
+Each element corresponds to the pixel intensity.
+
+\[
+I(x,y) \in [0,255]
+\]
+
+For RGB images:
+
+\[
+I \in \mathbb{R}^{H \times W \times 3}
+\]
+
+\section{Image Normalization}
+
+Neural networks perform better when data is normalized.
+
+Normalization transforms the pixel values:
+
+\[
+x' = \frac{x}{255}
+\]
+
+so that
+
+\[
+x' \in [0,1]
+\]
+
+This stabilizes gradient descent.
+
+\section{Convolution Operation}
+
+Convolution is the core operation in CNNs.
+
+Given an image $I$ and a kernel $K$:
+
+\[
+(I * K)(x,y) = \sum_{i=-k}^{k} \sum_{j=-k}^{k} I(x-i,y-j)K(i,j)
+\]
+
+The kernel extracts features such as edges.
+
+Example edge detection kernel:
+
+\[
+K =
+\begin{bmatrix}
+1 & 0 & -1 \\
+1 & 0 & -1 \\
+1 & 0 & -1
+\end{bmatrix}
+\]
+
+This operation produces a \textbf{feature map}.
+
+\section{Convolutional Neural Networks}
+
+CNNs consist of stacked layers.
+
+Typical architecture:
+
+\begin{itemize}
+\item Convolution
+\item Activation
+\item Pooling
+\item Fully connected layers
+\end{itemize}
+
+A convolutional layer computes:
+
+\[
+h = f(W * x + b)
+\]
+
+where
+
+\begin{itemize}
+\item $W$ = convolution filter
+\item $b$ = bias
+\item $f$ = activation function
+\end{itemize}
+
+\section{Activation Functions}
+
+The most common activation function is ReLU:
+
+\[
+ReLU(x) = \max(0,x)
+\]
+
+Advantages:
+
+\begin{itemize}
+\item avoids vanishing gradients
+\item faster training
+\end{itemize}
+
+\section{Pooling Layers}
+
+Pooling reduces spatial resolution.
+
+Max pooling:
+
+\[
+y = \max(x_1,x_2,x_3,x_4)
+\]
+
+Example:
+
+\[
+\begin{bmatrix}
+1 & 3 \\
+2 & 0
+\end{bmatrix}
+\rightarrow 3
+\]
+
+Benefits:
+
+\begin{itemize}
+\item reduces computation
+\item increases translation invariance
+\end{itemize}
+
+\section{Fully Connected Layers}
+
+After feature extraction, features are flattened:
+
+\[
+x \in \mathbb{R}^{n}
+\]
+
+Prediction is obtained via:
+
+\[
+y = \sigma(Wx + b)
+\]
+
+where $\sigma$ is the sigmoid function.
+
+\section{Binary Cross Entropy Loss}
+
+For binary classification:
+
+\[
+L = - \frac{1}{N} \sum_{i=1}^{N}
+\left[y_i \log(p_i) + (1-y_i)\log(1-p_i)\right]
+\]
+
+where
+
+\begin{itemize}
+\item $y_i$ = ground truth
+\item $p_i$ = predicted probability
+\end{itemize}
+
+\section{Gradient Descent}
+
+Parameters are updated using gradient descent.
+
+\[
+\theta_{t+1} = \theta_t - \eta \nabla L(\theta)
+\]
+
+where
+
+\begin{itemize}
+\item $\eta$ = learning rate
+\item $\nabla L$ = gradient of the loss
+\end{itemize}
+
+\section{Backpropagation}
+
+Backpropagation computes gradients using the chain rule.
+
+For a composition of functions:
+
+\[
+f(x) = f_3(f_2(f_1(x)))
+\]
+
+the gradient becomes:
+
+\[
+\frac{df}{dx} =
+\frac{df_3}{df_2}
+\cdot
+\frac{df_2}{df_1}
+\cdot
+\frac{df_1}{dx}
+\]
+
+This allows efficient training of deep networks.
+
+\section{Transfer Learning}
+
+Training deep CNNs from scratch requires millions of images.
+
+Transfer learning uses pretrained models such as:
+
+\begin{itemize}
+\item ResNet
+\item EfficientNet
+\item VGG
+\end{itemize}
+
+Mathematically:
+
+\[
+f(x) = g(h(x))
+\]
+
+where
+
+\begin{itemize}
+\item $h(x)$ = pretrained feature extractor
+\item $g(x)$ = new classifier
+\end{itemize}
+
+Only the last layers are trained.
+
+\section{Data Augmentation}
+
+Medical datasets are often small.
+
+Data augmentation artificially increases the dataset.
+
+Transformations include:
+
+\begin{itemize}
+\item rotation
+\item flipping
+\item zoom
+\item brightness change
+\end{itemize}
+
+Mathematically:
+
+\[
+x' = T(x)
+\]
+
+where $T$ is a transformation.
+
+\section{Explainable AI}
+
+In medical applications, interpretability is critical.
+
+Grad-CAM generates heatmaps highlighting important regions.
+
+\[
+L^c = ReLU\left(
+\sum_k \alpha_k^c A^k
+\right)
+\]
+
+where
+
+\begin{itemize}
+\item $A^k$ = feature maps
+\item $\alpha_k^c$ = weights computed via gradients
+\end{itemize}
+
+The result is a localization map.
+
+\section{Evaluation Metrics}
+
+Accuracy:
+
+\[
+Accuracy =
+\frac{TP + TN}{TP + TN + FP + FN}
+\]
+
+Precision:
+
+\[
+Precision =
+\frac{TP}{TP + FP}
+\]
+
+Recall (Sensitivity):
+
+\[
+Recall =
+\frac{TP}{TP + FN}
+\]
+
+F1 score:
+
+\[
+F1 =
+2\frac{Precision \cdot Recall}{Precision + Recall}
+\]
+
+\section{ROC Curve}
+
+The ROC curve represents the tradeoff between
+True Positive Rate and False Positive Rate.
+
+\[
+TPR =
+\frac{TP}{TP + FN}
+\]
+
+\[
+FPR =
+\frac{FP}{FP + TN}
+\]
+
+The Area Under Curve (AUC) measures classifier performance.
+
+\section{Conclusion}
+
+Computer Vision techniques combined with deep learning allow automated medical image analysis.
+
+However, for clinical use, models must be:
+
+\begin{itemize}
+\item robust
+\item explainable
+\item validated on large datasets
+\end{itemize}
+
+\end{document}

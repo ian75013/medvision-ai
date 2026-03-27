@@ -1,0 +1,145 @@
+﻿\documentclass[11pt]{article}
+
+\usepackage{graphicx}
+\usepackage{hyperref}
+
+\title{MedVision AI Project Documentation}
+\author{Yann Sofian Smatti}
+\date{}
+
+\begin{document}
+
+\maketitle
+
+\tableofcontents
+
+\newpage
+
+\section{Project Overview}
+
+MedVision AI is a machine learning platform designed for medical image analysis.
+
+The goal is to:
+
+\begin{itemize}
+\item train computer vision models
+\item evaluate their performance
+\item track experiments
+\item deploy inference APIs
+\end{itemize}
+
+\section{Architecture}
+
+The project follows a modular architecture:
+
+\begin{verbatim}
+medvision-ai
+│
+├── data
+├── src
+├── models
+├── training
+├── evaluation
+├── inference
+├── docker
+└── mlruns
+\end{verbatim}
+
+Each module is designed to be independent.
+
+\section{Data Pipeline}
+
+The data pipeline includes:
+
+\begin{itemize}
+\item dataset loading
+\item preprocessing
+\item augmentation
+\item batching
+\end{itemize}
+
+Images are resized to:
+
+\[
+224 \times 224
+\]
+
+which corresponds to the input size of most pretrained networks.
+
+\section{Model Training}
+
+The training pipeline includes:
+
+\begin{itemize}
+\item baseline CNN
+\item transfer learning model
+\item hyperparameter tuning
+\end{itemize}
+
+Training steps:
+
+\begin{enumerate}
+\item Load dataset
+\item Apply preprocessing
+\item Train model
+\item Log results with MLflow
+\end{enumerate}
+
+\section{Experiment Tracking}
+
+MLflow tracks:
+
+\begin{itemize}
+\item parameters
+\item metrics
+\item models
+\end{itemize}
+
+This allows comparison between experiments.
+
+\section{Inference API}
+
+The inference API is implemented using FastAPI.
+
+Example endpoint:
+
+\begin{verbatim}
+/predict
+\end{verbatim}
+
+The API receives an image and returns a prediction probability.
+
+\section{Deployment}
+
+The project is containerized using Docker.
+
+Advantages:
+
+\begin{itemize}
+\item reproducibility
+\item portability
+\item easy deployment
+\end{itemize}
+
+\section{Continuous Integration}
+
+GitHub Actions can automatically:
+
+\begin{itemize}
+\item run tests
+\item build Docker images
+\item check code quality
+\end{itemize}
+
+\section{Future Improvements}
+
+Possible improvements include:
+
+\begin{itemize}
+\item segmentation models (U-Net)
+\item explainable AI
+\item multimodal learning
+\item real-time inference
+\end{itemize}
+
+\end{document}
