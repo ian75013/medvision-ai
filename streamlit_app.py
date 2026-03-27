@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 import tempfile
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -9,6 +10,333 @@ import streamlit as st
 
 from src.preprocessing.image_loader import load_and_preprocess_image
 from src.registry.model_registry import compare_models, get_model_entry, load_registry, load_tf_model
+
+
+IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".bmp", ".webp"}
+
+
+def _is_supported_image(path: Path) -> bool:
+    return path.is_file() and path.suffix.lower() in IMAGE_EXTENSIONS
+
+
+def _safe_rel_display(path: Path, root: Path) -> str:
+    try:
+        return str(path.resolve().relative_to(root.resolve()))
+    except Exception:
+        return path.name
+
+
+def _normalize_label(value: str) -> str:
+    return "".join(ch for ch in value.lower() if ch.isalnum())
+
+
+def _canonical_label(raw_label: str, expected_labels: list[str] | None) -> str:
+    if not expected_labels:
+        return raw_label
+    raw_norm = _normalize_label(raw_label)
+    for label in expected_labels:
+        label_norm = _normalize_label(label)
+        if raw_norm == label_norm:
+            return label
+        if raw_norm and label_norm and (raw_norm in label_norm or label_norm in raw_norm):
+            return label
+    return raw_label
+
+
+def _infer_label_from_path(path: Path, expected_labels: list[str] | None) -> str:
+    if not expected_labels:
+        return path.parent.name
+    parts = [part for part in path.parts if part]
+    candidates = [path.parent.name, path.stem]
+    candidates.extend(parts[::-1])
+    for candidate in candidates:
+        canonical = _canonical_label(candidate, expected_labels)
+        if canonical in expected_labels:
+            return canonical
+    return _canonical_label(path.parent.name, expected_labels)
+
+
+def _collect_images_from_dirs(
+    directories: list[Path],
+    root: Path,
+    limit: int,
+    expected_labels: list[str] | None = None,
+) -> list[dict[str, Any]]:
+    buckets: dict[str, list[dict[str, Any]]] = {}
+    per_label_limit = None
+    if expected_labels:
+        per_label_limit = max(1, limit // max(1, len(expected_labels)))
+        buckets = {label: [] for label in expected_labels}
+
+    samples: list[dict[str, Any]] = []
+    for directory in directories:
+        if not directory.exists():
+            continue
+        for path in directory.rglob("*"):
+            if not _is_supported_image(path):
+                continue
+            label_hint = _infer_label_from_path(path, expected_labels)
+            rel = _safe_rel_display(path, root)
+            sample = {
+                "path": path,
+                "label": label_hint,
+                "source": rel,
+                "display": f"{label_hint} | {rel}",
+            }
+            if expected_labels and per_label_limit is not None and label_hint in buckets:
+                if len(buckets[label_hint]) < per_label_limit:
+                    buckets[label_hint].append(sample)
+                if all(len(buckets[label]) >= per_label_limit for label in expected_labels):
+                    break
+            else:
+                samples.append(sample)
+                if len(samples) >= limit:
+                    return samples
+        if expected_labels and per_label_limit is not None and all(len(buckets[label]) >= per_label_limit for label in expected_labels):
+            break
+
+    if expected_labels and per_label_limit is not None:
+        balanced: list[dict[str, Any]] = []
+        round_idx = 0
+        while len(balanced) < limit:
+            added_in_round = False
+            for label in expected_labels:
+                bucket = buckets.get(label, [])
+                if round_idx < len(bucket):
+                    balanced.append(bucket[round_idx])
+                    added_in_round = True
+                    if len(balanced) >= limit:
+                        break
+            if not added_in_round:
+                break
+            round_idx += 1
+        return balanced
+
+    return samples
+
+
+def _collect_images_from_manifest(
+    manifest_path: Path,
+    root: Path,
+    limit: int,
+    expected_labels: list[str] | None = None,
+) -> list[dict[str, Any]]:
+    if not manifest_path.exists():
+        return []
+    try:
+        manifest_df = pd.read_csv(manifest_path)
+    except Exception:
+        return []
+    if "image_path" not in manifest_df.columns:
+        return []
+
+    buckets: dict[str, list[dict[str, Any]]] = {}
+    per_label_limit = None
+    if expected_labels:
+        per_label_limit = max(1, limit // max(1, len(expected_labels)))
+        buckets = {label: [] for label in expected_labels}
+
+    samples: list[dict[str, Any]] = []
+    for _, row in manifest_df.iterrows():
+        image_path_raw = row.get("image_path")
+        if not isinstance(image_path_raw, str) or not image_path_raw.strip():
+            continue
+        candidate = Path(image_path_raw)
+        if not candidate.is_absolute():
+            candidate = root / candidate
+        if not _is_supported_image(candidate):
+            continue
+        raw_label = str(row.get("label", candidate.parent.name))
+        label_hint = _canonical_label(raw_label, expected_labels)
+        rel = _safe_rel_display(candidate, root)
+        sample = {
+            "path": candidate,
+            "label": label_hint,
+            "source": rel,
+            "display": f"{label_hint} | {rel}",
+        }
+        if expected_labels and per_label_limit is not None and label_hint in buckets:
+            if len(buckets[label_hint]) < per_label_limit:
+                buckets[label_hint].append(sample)
+            if all(len(buckets[label]) >= per_label_limit for label in expected_labels):
+                break
+        else:
+            samples.append(sample)
+            if len(samples) >= limit:
+                break
+
+    if expected_labels and per_label_limit is not None:
+        balanced: list[dict[str, Any]] = []
+        round_idx = 0
+        while len(balanced) < limit:
+            added_in_round = False
+            for label in expected_labels:
+                bucket = buckets.get(label, [])
+                if round_idx < len(bucket):
+                    balanced.append(bucket[round_idx])
+                    added_in_round = True
+                    if len(balanced) >= limit:
+                        break
+            if not added_in_round:
+                break
+            round_idx += 1
+        return balanced
+
+    return samples
+
+
+def _filter_samples(samples: list[dict[str, Any]], labels: list[str], query: str) -> list[dict[str, Any]]:
+    filtered = samples
+    if labels:
+        label_set = {label.lower() for label in labels}
+        filtered = [sample for sample in filtered if str(sample.get("label", "")).lower() in label_set]
+    q = query.strip().lower()
+    if q:
+        filtered = [
+            sample
+            for sample in filtered
+            if q in str(sample.get("source", "")).lower() or q in str(sample.get("display", "")).lower()
+        ]
+    return filtered
+
+
+def _recommended_samples(samples: list[dict[str, Any]], max_items: int = 4) -> list[dict[str, Any]]:
+    if not samples:
+        return []
+
+    grouped: dict[str, list[dict[str, Any]]] = {}
+    for sample in samples:
+        key = str(sample.get("label", "unknown"))
+        grouped.setdefault(key, []).append(sample)
+
+    picks: list[dict[str, Any]] = []
+    for label in sorted(grouped.keys()):
+        if grouped[label]:
+            picks.append(grouped[label][0])
+        if len(picks) >= max_items:
+            return picks
+
+    if len(picks) < max_items:
+        existing = {str(item.get("source", item.get("display", ""))) for item in picks}
+        for sample in samples:
+            key = str(sample.get("source", sample.get("display", "")))
+            if key in existing:
+                continue
+            picks.append(sample)
+            if len(picks) >= max_items:
+                break
+    return picks
+
+
+def _render_fixed_label_filters(problem: str, labels: list[str]) -> list[str]:
+    state_key = f"label_filters_{problem}"
+    saved = st.session_state.get(state_key)
+
+    if not isinstance(saved, list):
+        selected_set = set(labels)
+    else:
+        selected_set = set(saved).intersection(labels)
+        if not selected_set and labels:
+            selected_set = set(labels)
+
+    st.caption("Class filters")
+    c_all, c_none = st.columns(2)
+    if c_all.button("All", key=f"{state_key}_all", use_container_width=True):
+        selected_set = set(labels)
+    if c_none.button("None", key=f"{state_key}_none", use_container_width=True):
+        selected_set = set()
+
+    if labels:
+        buttons_per_row = 4
+        row_cols = st.columns(buttons_per_row)
+        for idx, label in enumerate(labels):
+            if idx > 0 and idx % buttons_per_row == 0:
+                row_cols = st.columns(buttons_per_row)
+            is_selected = label in selected_set
+            pressed = row_cols[idx % buttons_per_row].button(
+                label,
+                key=f"{state_key}_btn_{idx}",
+                type="primary" if is_selected else "secondary",
+                use_container_width=True,
+            )
+            if pressed:
+                if label in selected_set:
+                    selected_set.remove(label)
+                else:
+                    selected_set.add(label)
+
+    selected_labels = [label for label in labels if label in selected_set]
+    st.session_state[state_key] = selected_labels
+    return selected_labels
+
+
+@st.cache_data(show_spinner=False)
+def _build_problem_image_database(problem: str, expected_labels: list[str] | None = None, limit: int = 60) -> list[dict[str, Any]]:
+    root = Path(".").resolve()
+    if problem == "chest_xray":
+        return _collect_images_from_dirs(
+            [
+                root / "data/raw/chest_xray/test",
+                root / "data/raw/chest_xray/val",
+                root / "data/raw/chest_xray/train",
+            ],
+            root=root,
+            limit=limit,
+            expected_labels=expected_labels,
+        )
+    if problem == "brain_mri":
+        return _collect_images_from_dirs(
+            [
+                root / "data/raw/brain_tumor_mri/Testing",
+                root / "data/raw/brain_tumor_mri/Training",
+            ],
+            root=root,
+            limit=limit,
+            expected_labels=expected_labels,
+        )
+    if problem == "brain_tumor_segmentation":
+        samples = _collect_images_from_manifest(
+            root / "data/processed/brain_tumor_segmentation/manifest.csv",
+            root=root,
+            limit=limit,
+            expected_labels=expected_labels,
+        )
+        if samples:
+            return samples
+        return _collect_images_from_dirs(
+            [root / "data/raw/brain_tumor_segmentation"],
+            root=root,
+            limit=limit,
+            expected_labels=expected_labels,
+        )
+    if problem == "chest_xray_segmentation":
+        samples = _collect_images_from_manifest(
+            root / "data/processed/chest_xray_segmentation/manifest.csv",
+            root=root,
+            limit=limit,
+            expected_labels=expected_labels,
+        )
+        if samples:
+            return samples
+        samples = _collect_images_from_dirs(
+            [root / "data/raw/chest_xray_segmentation"],
+            root=root,
+            limit=limit,
+            expected_labels=expected_labels,
+        )
+        if samples:
+            return samples
+        return _collect_images_from_dirs(
+            [
+                root / "data/raw/chest_xray/test",
+                root / "data/raw/chest_xray/val",
+                root / "data/raw/chest_xray/train",
+            ],
+            root=root,
+            limit=limit,
+            expected_labels=expected_labels,
+        )
+    return []
 
 
 def _predict(problem: str, model_name: str, image_path: Path, mask_threshold: float = 0.5) -> dict:
@@ -233,16 +561,81 @@ with tab_predict:
         st.warning("No trained models found for this problem in artifacts/models.")
     else:
         selected_models = st.multiselect("Select models", options=available_models, default=available_models)
-        uploaded = st.file_uploader("Upload an image", type=["png", "jpg", "jpeg"])
+        input_mode = st.radio("Image source", options=["Upload image", "Dataset image database"], horizontal=True)
+        selected_image_path: Path | None = None
+        uploaded = None
 
-        if uploaded is not None:
+        if input_mode == "Upload image":
+            uploaded = st.file_uploader("Upload an image", type=["png", "jpg", "jpeg", "bmp", "webp"])
+            if uploaded is not None:
+                selected_image_path = Path(uploaded.name)
+        else:
+            db_samples = _build_problem_image_database(
+                problem,
+                expected_labels=problem_meta.get("class_names", []),
+                limit=48,
+            )
+            if not db_samples:
+                st.warning("No local image samples were found for this problem. You can still upload an image manually.")
+            else:
+                st.caption(f"{len(db_samples)} local samples available for this problem.")
+                base_labels = [str(label) for label in problem_meta.get("class_names", [])]
+                sample_labels = [str(sample["label"]) for sample in db_samples]
+                available_labels = list(dict.fromkeys(base_labels + sorted(set(sample_labels))))
+                c_filter1, c_filter2 = st.columns([1.15, 1])
+                with c_filter1:
+                    chosen_labels = _render_fixed_label_filters(problem=problem, labels=available_labels)
+                with c_filter2:
+                    path_query = st.text_input("Search filename/path", value="")
+
+                filtered_samples = _filter_samples(db_samples, labels=chosen_labels, query=path_query)
+                if not filtered_samples:
+                    st.warning("No image matches these filters.")
+                else:
+                    recs = _recommended_samples(filtered_samples, max_items=4)
+                    if recs:
+                        st.markdown("#### Recommended samples")
+                        rec_cols = st.columns(len(recs))
+                        for idx, sample in enumerate(recs):
+                            with rec_cols[idx]:
+                                st.image(str(sample["path"]), caption=sample["label"], use_container_width=True)
+
+                    page_size = st.select_slider("Samples per page", options=[6, 12, 18, 24], value=12)
+                    total_pages = max(1, (len(filtered_samples) + page_size - 1) // page_size)
+                    page = st.number_input("Page", min_value=1, max_value=total_pages, value=1, step=1)
+                    page_start = (int(page) - 1) * page_size
+                    page_samples = filtered_samples[page_start : page_start + page_size]
+
+                    st.caption(f"Showing {len(page_samples)} / {len(filtered_samples)} filtered samples.")
+                    selected_index = st.selectbox(
+                        "Choose a dataset image",
+                        options=list(range(len(page_samples))),
+                        format_func=lambda idx: page_samples[idx]["display"],
+                    )
+                    selected_sample = page_samples[selected_index]
+                    selected_image_path = Path(selected_sample["path"])
+
+                    preview_cols = st.columns(3)
+                    for idx, sample in enumerate(page_samples[:6]):
+                        with preview_cols[idx % 3]:
+                            st.image(str(sample["path"]), caption=sample["label"], use_container_width=True)
+
+        if uploaded is not None or selected_image_path is not None:
             left_col, right_col = st.columns([1.1, 1.4])
             with left_col:
-                st.image(uploaded, caption="Input image", use_container_width=True)
+                if uploaded is not None:
+                    st.image(uploaded, caption="Input image", use_container_width=True)
+                else:
+                    st.image(str(selected_image_path), caption="Dataset image", use_container_width=True)
 
-            with tempfile.NamedTemporaryFile(delete=False, suffix=Path(uploaded.name).suffix or ".png") as tmp:
-                tmp.write(uploaded.getvalue())
-                tmp_path = Path(tmp.name)
+            tmp_path: Path | None = None
+            predict_path: Path | None = selected_image_path
+
+            if uploaded is not None:
+                with tempfile.NamedTemporaryFile(delete=False, suffix=Path(uploaded.name).suffix or ".png") as tmp:
+                    tmp.write(uploaded.getvalue())
+                    tmp_path = Path(tmp.name)
+                    predict_path = tmp_path
 
             try:
                 prediction_rows = []
@@ -252,7 +645,9 @@ with tab_predict:
 
                 with st.spinner("Running predictions..."):
                     for model_name in selected_models:
-                        result = _predict(problem, model_name, tmp_path, mask_threshold=mask_threshold)
+                        if predict_path is None:
+                            continue
+                        result = _predict(problem, model_name, predict_path, mask_threshold=mask_threshold)
                         prediction_rows.append(
                             {
                                 "model": model_name,
@@ -328,7 +723,8 @@ with tab_predict:
                             st.caption("Probability map")
                             st.image(mask_prob, clamp=True, use_container_width=True)
             finally:
-                tmp_path.unlink(missing_ok=True)
+                if tmp_path is not None:
+                    tmp_path.unlink(missing_ok=True)
 
 with tab_registry:
     st.subheader("Registry Snapshot")
