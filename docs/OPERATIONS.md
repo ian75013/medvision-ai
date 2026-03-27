@@ -4,7 +4,25 @@ This document is the practical runbook for local operation, verification, and tr
 
 ## 1. Environment setup
 
-### 1.1 Create and activate virtual environment
+### 1.1 Create and activate virtual environment (recommended: uv)
+
+Windows PowerShell:
+
+```powershell
+uv venv .venv
+.\.venv\Scripts\Activate.ps1
+uv pip install -r requirements.txt
+```
+
+Linux/WSL:
+
+```bash
+uv venv .venv
+source .venv/bin/activate
+uv pip install -r requirements.txt
+```
+
+### 1.2 Legacy alternative (venv + pip)
 
 Windows PowerShell:
 
@@ -24,7 +42,7 @@ python -m pip install --upgrade pip
 pip install -r requirements.txt
 ```
 
-### 1.2 Configure Kaggle token
+### 1.3 Configure Kaggle token
 
 - Windows: %USERPROFILE%/.kaggle/kaggle.json
 - Linux/WSL: ~/.kaggle/kaggle.json

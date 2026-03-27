@@ -38,7 +38,7 @@ Current stages:
 
 Before running DVC commands:
 
-1. Activate your Python virtual environment.
+1. Activate your Python virtual environment (uv or legacy venv).
 2. Ensure project dependencies are installed.
 3. Confirm Kaggle token is configured if download stages are needed.
 
@@ -215,7 +215,9 @@ Cause:
 Fix:
 
 ```bash
-pip install "pathspec<1.0"
+uv pip install "pathspec<1.0"
+# or, with legacy pip:
+# pip install "pathspec<1.0"
 ```
 
 Then retry:

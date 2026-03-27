@@ -110,16 +110,17 @@ If you are new to the project, use Python 3.12 to avoid most compatibility issue
 
 ## 4. Installation (quick path)
 
-### Windows PowerShell
+### Option A (recommended): uv
+
+#### Windows PowerShell
 
 ```powershell
-python -m venv .venv
+uv venv .venv
 .\.venv\Scripts\Activate.ps1
-python -m pip install --upgrade pip
-pip install -r requirements.txt
+uv pip install -r requirements.txt
 ```
 
-### Linux or WSL
+#### Linux or WSL
 
 > **Prérequis** : [uv](https://docs.astral.sh/uv/getting-started/installation/) — gestionnaire de paquets Python ultra-rapide.
 > ```bash
@@ -130,9 +131,9 @@ pip install -r requirements.txt
 ### Créer l'environnement et installer les dépendances
 
 ```bash
-uv venv .venv-wsl
-source .venv-wsl/bin/activate   # Linux/macOS
-# .venv-wsl\Scripts\activate    # Windows PowerShell
+uv venv .venv
+source .venv/bin/activate   # Linux/macOS
+# .venv\Scripts\activate    # Windows PowerShell
 
 uv pip install -r requirements.txt
 ```
@@ -144,10 +145,47 @@ uv pip install -r requirements.txt
 ### Ajouter / supprimer un paquet
 
 ```bash
+source .venv/bin/activate
+uv pip install <package>
+uv pip uninstall <package>
+# Puis, si necessaire, mettez a jour requirements.txt
+```
+
+### Option B (legacy): venv + pip
+
+#### Windows PowerShell
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
+pip install -r requirements.txt
+```
+
+#### Linux/WSL
+
+```bash
 python -m venv .venv
 source .venv/bin/activate
 python -m pip install --upgrade pip
 pip install -r requirements.txt
+```
+
+### Migration rapide venv -> uv
+
+Si vous avez deja un workflow `venv + pip`, vous pouvez basculer vers `uv` sans changer la structure du projet.
+
+```bash
+deactivate 2>/dev/null || true
+rm -rf .venv
+uv venv .venv && source .venv/bin/activate && uv pip install -r requirements.txt
+```
+
+Verification rapide :
+
+```bash
+python --version
+python -m pip --version
 ```
 
 ## 5. Kaggle setup
@@ -439,7 +477,7 @@ In most cases, the issue is token location or file permissions.
 ### TensorFlow error on Python 3.13+
 
 - Use Python 3.12 for this environment
-- Recreate a clean venv and reinstall requirements.txt
+- Recreate a clean environment (uv or venv) and reinstall requirements.txt
 
 If needed, start from a clean environment instead of stacking dependency workarounds.
 

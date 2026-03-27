@@ -24,7 +24,7 @@ The focus is not only model metrics, but reproducible engineering workflows.
 ## 3. First-day onboarding checklist
 
 1. Create a Python 3.12 virtual environment.
-2. Install requirements.txt.
+2. Install requirements.txt (prefer uv, legacy venv/pip also supported).
 3. Configure Kaggle API token.
 4. Run a short training smoke test.
 5. Start API and confirm /health.
@@ -34,11 +34,23 @@ The focus is not only model metrics, but reproducible engineering workflows.
 Quick command sequence:
 
 ```bash
+uv venv .venv
+source .venv/bin/activate
+uv pip install -r requirements.txt
 python -m src.data.download_dataset
 python -m src.training.train --config configs/config.yaml --model optimized --epochs 1
 uvicorn src.api.main:app --reload
 streamlit run streamlit_app.py
 mlflow ui --backend-store-uri ./mlruns
+```
+
+Legacy setup alternative:
+
+```bash
+python -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip
+pip install -r requirements.txt
 ```
 
 ## 4. Project operating model
