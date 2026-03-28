@@ -59,12 +59,11 @@ Important: les enregistrements DNS `api` et `app` doivent deja pointer vers l'IP
 
 ### Si sudo demande un mot de passe
 
-Tu peux le passer via `.env.ovh`:
+Utilise de preference un prompt interactif:
 
 ```bash
-SUDO_PASSWORD=ton_mot_de_passe_sudo
+ASK_SUDO_PASSWORD=true
+SUDO_PASSWORD=
 ```
 
-Le script utilisera ce mot de passe pour les commandes sudo distantes.
-
-Attention: c'est sensible. Evite de versionner ce fichier.
+Le mot de passe sudo est alors saisi au runtime (non stocke dans le fichier d'environnement).

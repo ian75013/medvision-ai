@@ -5,6 +5,12 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 APP_NAME="${APP_NAME:-medvision-ai}"
 IMAGE_TAG="${IMAGE_TAG:-latest}"
 
+if [ -n "${SUDO_PASSWORD:-}" ] && [ "${ALLOW_PLAINTEXT_SUDO_PASSWORD:-false}" != "true" ]; then
+  echo "[deploy][error] Refusing plaintext SUDO_PASSWORD from environment." >&2
+  echo "[deploy][error] Use ASK_SUDO_PASSWORD=true (recommended), or set ALLOW_PLAINTEXT_SUDO_PASSWORD=true explicitly." >&2
+  exit 1
+fi
+
 log() {
   echo "[deploy] $*"
 }

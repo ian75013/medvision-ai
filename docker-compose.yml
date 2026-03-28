@@ -5,8 +5,12 @@ services:
       - "${NGINX_HTTP_BIND_IP:-127.0.0.1}:${NGINX_HTTP_HOST_PORT:-18080}:80"
       - "${NGINX_HTTPS_BIND_IP:-127.0.0.1}:${NGINX_HTTPS_HOST_PORT:-18443}:443"
     volumes:
-      - ./deploy/reverse-proxy/nginx/medvision.conf:/etc/nginx/conf.d/medvision.conf:ro
+      - ./deploy/reverse-proxy/nginx/medvision.conf.template:/etc/nginx/templates/medvision.conf.template:ro
       - ./deploy/certs:/etc/nginx/certs:ro
+    environment:
+      - API_DOMAIN=${API_DOMAIN:-api.example.com}
+      - APP_DOMAIN=${APP_DOMAIN:-app.example.com}
+      - NGINX_ENVSUBST_TEMPLATE_VARS=${API_DOMAIN} ${APP_DOMAIN}
     depends_on:
       - api
       - streamlit

@@ -21,6 +21,12 @@ set +a
 
 PROXY_PROVIDER="${PROXY_PROVIDER:-nginx}"
 
+if [ -n "${SUDO_PASSWORD:-}" ] && [ "${ALLOW_PLAINTEXT_SUDO_PASSWORD:-false}" != "true" ]; then
+  echo "[deploy-ovh][error] Refusing plaintext SUDO_PASSWORD from env file." >&2
+  echo "[deploy-ovh][error] Use ASK_SUDO_PASSWORD=true (recommended), or set ALLOW_PLAINTEXT_SUDO_PASSWORD=true explicitly." >&2
+  exit 1
+fi
+
 if [ "$XTRACE_WAS_ENABLED" -eq 1 ] && [ -n "${SUDO_PASSWORD:-}" ]; then
   echo "Refusing to run with bash -x while SUDO_PASSWORD is set. Disable xtrace or unset SUDO_PASSWORD first." >&2
   exit 1
@@ -139,14 +145,13 @@ configure_nginx() {
   local app_dir="${APP_DIR:-/opt/medvision-ai}"
   local sudo_password="${SUDO_PASSWORD:-}"
   local nginx_http_host_port="${NGINX_HTTP_HOST_PORT:-18080}"
-  local api_host_port="${API_HOST_PORT:-18000}"
-  local streamlit_host_port="${STREAMLIT_HOST_PORT:-18501}"
-  local nginx_ssl_cert="${NGINX_SSL_CERT:-}"
-  local nginx_ssl_key="${NGINX_SSL_KEY:-}"
-  local api_ssl_cert="${API_SSL_CERT:-${nginx_ssl_cert}}"
-  local api_ssl_key="${API_SSL_KEY:-${nginx_ssl_key}}"
-  local app_ssl_cert="${APP_SSL_CERT:-${nginx_ssl_cert}}"
-  local app_ssl_key="${APP_SSL_KEY:-${nginx_ssl_key}}"
+  local letsencrypt_email="${LETSENCRYPT_EMAIL:-${CADDY_EMAIL:-}}"
+  local auto_certbot_once="${AUTO_CERTBOT_ONCE:-true}"
+  local apache_ssl_fallback_domain="${APACHE_SSL_FALLBACK_DOMAIN:-}"
+  local apache_api_ssl_cert="${APACHE_API_SSL_CERT:-/etc/letsencrypt/live/${api_domain}/fullchain.pem}"
+  local apache_api_ssl_key="${APACHE_API_SSL_KEY:-/etc/letsencrypt/live/${api_domain}/privkey.pem}"
+  local apache_app_ssl_cert="${APACHE_APP_SSL_CERT:-/etc/letsencrypt/live/${app_domain}/fullchain.pem}"
+  local apache_app_ssl_key="${APACHE_APP_SSL_KEY:-/etc/letsencrypt/live/${app_domain}/privkey.pem}"
   local ssh_tty_args=()
 
   if [ -z "$sudo_password" ]; then
@@ -164,68 +169,31 @@ configure_nginx() {
   fi
 
   local ssh_target="${ssh_user}@${ssh_host}"
-  local tmp_local_conf
-  tmp_local_conf="$(mktemp)"
-  local nginx_template_http="$ROOT_DIR/deploy/reverse-proxy/nginx/medvision.http.template.conf"
-  local nginx_template_https="$ROOT_DIR/deploy/reverse-proxy/nginx/medvision.https.template.conf"
-  local nginx_template_selected
-
-  if [ -n "$api_ssl_cert" ] && [ -n "$api_ssl_key" ] && [ -n "$app_ssl_cert" ] && [ -n "$app_ssl_key" ]; then
-    nginx_template_selected="$nginx_template_https"
-  else
-    nginx_template_selected="$nginx_template_http"
-    echo "[deploy-ovh] Nginx config generated in HTTP-only mode for the Docker service." >&2
-  fi
-
-  [ -f "$nginx_template_selected" ] || {
-    rm -f "$tmp_local_conf"
-    echo "Missing nginx template: $nginx_template_selected" >&2
-    return 1
-  }
-
-  cp "$nginx_template_selected" "$tmp_local_conf"
-  sed -i \
-    -e "s|__API_DOMAIN__|${api_domain}|g" \
-    -e "s|__APP_DOMAIN__|${app_domain}|g" \
-    -e "s|__API_PORT__|${api_host_port}|g" \
-    -e "s|__APP_PORT__|${streamlit_host_port}|g" \
-    -e "s|__API_SSL_CERT__|${api_ssl_cert}|g" \
-    -e "s|__API_SSL_KEY__|${api_ssl_key}|g" \
-    -e "s|__APP_SSL_CERT__|${app_ssl_cert}|g" \
-    -e "s|__APP_SSL_KEY__|${app_ssl_key}|g" \
-    "$tmp_local_conf"
 
   if [ "$XTRACE_WAS_ENABLED" -eq 1 ]; then
     set +x
   fi
 
-  ssh -p "$ssh_port" "$ssh_target" "mkdir -p $(printf %q "$app_dir")/deploy/reverse-proxy/nginx"
-  scp -P "$ssh_port" "$tmp_local_conf" "${ssh_target}:$(printf %q "$app_dir")/deploy/reverse-proxy/nginx/medvision.conf"
-
-  echo "[deploy-ovh] Nginx Docker config uploaded to ${app_dir}/deploy/reverse-proxy/nginx/medvision.conf" >&2
-
-  # Bridge public Apache vhosts to Dockerized nginx on loopback.
+  # Bridge public Apache vhosts to Dockerized nginx on loopback via dedicated site.
   local tmp_local_apache_conf
   tmp_local_apache_conf="$(mktemp)"
-  local tmp_remote_apache_conf="/tmp/medvision-apache-proxy.conf"
+  local tmp_remote_apache_conf="/tmp/medvision-apache-site.conf"
   cat > "$tmp_local_apache_conf" <<EOF
-<IfModule mod_proxy.c>
-<IfModule mod_proxy_http.c>
-<IfModule mod_rewrite.c>
-<IfModule mod_headers.c>
-ProxyPreserveHost On
-RequestHeader set X-Forwarded-Proto expr=%{REQUEST_SCHEME}
-RewriteEngine On
+<VirtualHost *:80>
+  ServerName ${api_domain}
+  ProxyPreserveHost On
+  ProxyPass / http://127.0.0.1:${nginx_http_host_port}/
+  ProxyPassReverse / http://127.0.0.1:${nginx_http_host_port}/
+  RequestHeader set X-Forwarded-Proto "http"
+</VirtualHost>
 
-RewriteCond %{HTTP_HOST} ^${api_domain}
-RewriteRule ^/(.*)$ http://127.0.0.1:${nginx_http_host_port}/\$1 [P,L]
-
-RewriteCond %{HTTP_HOST} ^${app_domain}
-RewriteRule ^/(.*)$ http://127.0.0.1:${nginx_http_host_port}/\$1 [P,L]
-</IfModule>
-</IfModule>
-</IfModule>
-</IfModule>
+<VirtualHost *:80>
+  ServerName ${app_domain}
+  ProxyPreserveHost On
+  ProxyPass / http://127.0.0.1:${nginx_http_host_port}/
+  ProxyPassReverse / http://127.0.0.1:${nginx_http_host_port}/
+  RequestHeader set X-Forwarded-Proto "http"
+</VirtualHost>
 EOF
 
   local tmp_local_apache_script
@@ -251,21 +219,123 @@ if ! command -v apache2ctl >/dev/null 2>&1; then
   exit 0
 fi
 
-run_sudo install -m 644 "$TMP_REMOTE_APACHE_CONF" /etc/apache2/conf-available/medvision-ai-proxy.conf
-run_sudo a2enmod proxy proxy_http rewrite headers >/dev/null
-run_sudo a2enconf medvision-ai-proxy >/dev/null
+run_sudo install -m 644 "$TMP_REMOTE_APACHE_CONF" /etc/apache2/sites-available/medvision-ai.conf
+run_sudo a2enmod proxy proxy_http headers ssl >/dev/null
+run_sudo a2disconf medvision-ai-proxy >/dev/null 2>&1 || true
+run_sudo a2ensite medvision-ai >/dev/null
 run_sudo apache2ctl configtest
 run_sudo systemctl reload apache2
+
+resolve_cert_pair() {
+  local cert_path="$1"
+  local key_path="$2"
+  local fallback_domain="$3"
+  local host_domain="$4"
+
+  if [ -s "$cert_path" ] && [ -s "$key_path" ]; then
+    printf '%s|%s' "$cert_path" "$key_path"
+    return 0
+  fi
+
+  if [ -n "$fallback_domain" ] && [ -s "/etc/letsencrypt/live/${fallback_domain}/fullchain.pem" ] && [ -s "/etc/letsencrypt/live/${fallback_domain}/privkey.pem" ]; then
+    printf '%s|%s' "/etc/letsencrypt/live/${fallback_domain}/fullchain.pem" "/etc/letsencrypt/live/${fallback_domain}/privkey.pem"
+    return 0
+  fi
+
+  local parent1="${host_domain#*.}"
+  local parent2="${parent1#*.}"
+  for candidate in "$parent1" "$parent2"; do
+    if [ -n "$candidate" ] && [ "$candidate" != "$host_domain" ] && [ -s "/etc/letsencrypt/live/${candidate}/fullchain.pem" ] && [ -s "/etc/letsencrypt/live/${candidate}/privkey.pem" ]; then
+      printf '%s|%s' "/etc/letsencrypt/live/${candidate}/fullchain.pem" "/etc/letsencrypt/live/${candidate}/privkey.pem"
+      return 0
+    fi
+  done
+
+  return 1
+}
+
+api_pair=""
+app_pair=""
+if api_pair="$(resolve_cert_pair "$APACHE_API_SSL_CERT" "$APACHE_API_SSL_KEY" "${APACHE_SSL_FALLBACK_DOMAIN:-}" "$API_DOMAIN")"; then
+  api_cert_ok=true
+else
+  api_cert_ok=false
+fi
+if app_pair="$(resolve_cert_pair "$APACHE_APP_SSL_CERT" "$APACHE_APP_SSL_KEY" "${APACHE_SSL_FALLBACK_DOMAIN:-}" "$APP_DOMAIN")"; then
+  app_cert_ok=true
+else
+  app_cert_ok=false
+fi
+
+if [ "$api_cert_ok" != "true" ] || [ "$app_cert_ok" != "true" ]; then
+  if [ "${AUTO_CERTBOT_ONCE:-true}" = "true" ]; then
+    marker_file="/etc/letsencrypt/.medvision-certbot-bootstrap.done"
+    if [ ! -f "$marker_file" ]; then
+      if [ -n "${LETSENCRYPT_EMAIL:-}" ]; then
+        run_sudo apt-get update
+        run_sudo apt-get install -y certbot python3-certbot-apache
+        run_sudo certbot certonly --apache -d "$API_DOMAIN" -m "$LETSENCRYPT_EMAIL" --agree-tos --no-eff-email -n || true
+        run_sudo certbot certonly --apache -d "$APP_DOMAIN" -m "$LETSENCRYPT_EMAIL" --agree-tos --no-eff-email -n || true
+      else
+        echo "[deploy-ovh] LETSENCRYPT_EMAIL is empty; skipping certbot bootstrap." >&2
+      fi
+      run_sudo touch "$marker_file"
+    fi
+  fi
+fi
+
+if [ "$api_cert_ok" = "true" ] && [ "$app_cert_ok" = "true" ]; then
+  api_cert_resolved="${api_pair%%|*}"
+  api_key_resolved="${api_pair##*|}"
+  app_cert_resolved="${app_pair%%|*}"
+  app_key_resolved="${app_pair##*|}"
+  ssl_tmp="$(mktemp)"
+  cat > "$ssl_tmp" <<EOF_SSL
+<IfModule mod_ssl.c>
+<VirtualHost *:443>
+  ServerName ${API_DOMAIN}
+  SSLEngine on
+  SSLCertificateFile ${api_cert_resolved}
+  SSLCertificateKeyFile ${api_key_resolved}
+  ProxyPreserveHost On
+  ProxyPass / http://127.0.0.1:${NGINX_HTTP_HOST_PORT}/
+  ProxyPassReverse / http://127.0.0.1:${NGINX_HTTP_HOST_PORT}/
+  RequestHeader set X-Forwarded-Proto "https"
+</VirtualHost>
+
+<VirtualHost *:443>
+  ServerName ${APP_DOMAIN}
+  SSLEngine on
+  SSLCertificateFile ${app_cert_resolved}
+  SSLCertificateKeyFile ${app_key_resolved}
+  ProxyPreserveHost On
+  ProxyPass / http://127.0.0.1:${NGINX_HTTP_HOST_PORT}/
+  ProxyPassReverse / http://127.0.0.1:${NGINX_HTTP_HOST_PORT}/
+  RequestHeader set X-Forwarded-Proto "https"
+</VirtualHost>
+</IfModule>
+EOF_SSL
+  run_sudo install -m 644 "$ssl_tmp" /etc/apache2/sites-available/medvision-ai-ssl.conf
+  rm -f "$ssl_tmp"
+  run_sudo a2ensite medvision-ai-ssl >/dev/null
+  run_sudo apache2ctl configtest
+  run_sudo systemctl reload apache2
+  echo "[deploy-ovh] Apache SSL site enabled for MedVision domains." >&2
+  echo "[deploy-ovh] SSL certs used: API=${api_cert_resolved} APP=${app_cert_resolved}" >&2
+else
+  run_sudo a2dissite medvision-ai-ssl >/dev/null 2>&1 || true
+  echo "[deploy-ovh] Apache SSL site skipped: certificates are not available yet." >&2
+fi
 SCRIPT_EOF
 
   chmod +x "$tmp_local_apache_conf" "$tmp_local_apache_script"
   scp -P "$ssh_port" "$tmp_local_apache_conf" "${ssh_target}:${tmp_remote_apache_conf}"
   scp -P "$ssh_port" "$tmp_local_apache_script" "${ssh_target}:${tmp_remote_apache_script}"
   ssh "${ssh_tty_args[@]}" -p "$ssh_port" "$ssh_target" \
-    "SUDO_PASSWORD=$(printf %q "$sudo_password") USE_REMOTE_SUDO_PROMPT=$(printf %q "${USE_REMOTE_SUDO_PROMPT:-false}") TMP_REMOTE_APACHE_CONF=$(printf %q "$tmp_remote_apache_conf") bash ${tmp_remote_apache_script}"
+    "SUDO_PASSWORD=$(printf %q "$sudo_password") USE_REMOTE_SUDO_PROMPT=$(printf %q "${USE_REMOTE_SUDO_PROMPT:-false}") TMP_REMOTE_APACHE_CONF=$(printf %q "$tmp_remote_apache_conf") API_DOMAIN=$(printf %q "$api_domain") APP_DOMAIN=$(printf %q "$app_domain") NGINX_HTTP_HOST_PORT=$(printf %q "$nginx_http_host_port") APACHE_API_SSL_CERT=$(printf %q "$apache_api_ssl_cert") APACHE_API_SSL_KEY=$(printf %q "$apache_api_ssl_key") APACHE_APP_SSL_CERT=$(printf %q "$apache_app_ssl_cert") APACHE_APP_SSL_KEY=$(printf %q "$apache_app_ssl_key") APACHE_SSL_FALLBACK_DOMAIN=$(printf %q "$apache_ssl_fallback_domain") LETSENCRYPT_EMAIL=$(printf %q "$letsencrypt_email") AUTO_CERTBOT_ONCE=$(printf %q "$auto_certbot_once") bash ${tmp_remote_apache_script}"
   echo "[deploy-ovh] Apache bridge configured for ${api_domain} and ${app_domain} -> 127.0.0.1:${nginx_http_host_port}" >&2
 
-  rm -f "$tmp_local_conf" "$tmp_local_apache_conf" "$tmp_local_apache_script"
+  rm -f "$tmp_local_apache_conf" "$tmp_local_apache_script"
   if [ "$XTRACE_WAS_ENABLED" -eq 1 ]; then
     set -x
   fi
