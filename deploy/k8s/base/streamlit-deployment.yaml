@@ -1,0 +1,45 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: medvision-streamlit
+  namespace: medvision
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: medvision-streamlit
+  template:
+    metadata:
+      labels:
+        app: medvision-streamlit
+    spec:
+      containers:
+        - name: streamlit
+          image: medvision-streamlit:latest
+          imagePullPolicy: IfNotPresent
+          command: ["streamlit"]
+          args: ["run", "streamlit_app.py", "--server.address", "0.0.0.0", "--server.port", "8501"]
+          ports:
+            - containerPort: 8501
+          envFrom:
+            - configMapRef:
+                name: medvision-config
+          resources:
+            requests:
+              cpu: "500m"
+              memory: "1Gi"
+            limits:
+              cpu: "1"
+              memory: "2Gi"
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 8501
+            initialDelaySeconds: 45
+            periodSeconds: 20
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 8501
+            initialDelaySeconds: 30
+            periodSeconds: 10

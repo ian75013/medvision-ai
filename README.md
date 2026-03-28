@@ -511,6 +511,9 @@ After config changes, dvc status is usually the fastest way to see what is out o
 - docs/ARCHITECTURE.md
 - docs/PROJECT_GUIDE.md
 - docs/OPERATIONS.md
+- docs/DEPLOYMENT_OPTIONS.md
+- docs/DEPLOYMENT_PLAYBOOK_AWS_AZURE_K3S_OVH.md
+- docs/REVERSE_PROXY_DNS.md
 - docs/MLOPS_GUIDE.md
 - docs/COMPONENTS.md
 - docs/KNOWN_GAPS.md

@@ -1,0 +1,45 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: medvision-api
+  namespace: medvision
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: medvision-api
+  template:
+    metadata:
+      labels:
+        app: medvision-api
+    spec:
+      containers:
+        - name: api
+          image: medvision-api:latest
+          imagePullPolicy: IfNotPresent
+          command: ["uvicorn"]
+          args: ["src.api.main:app", "--host", "0.0.0.0", "--port", "8000"]
+          ports:
+            - containerPort: 8000
+          envFrom:
+            - configMapRef:
+                name: medvision-config
+          resources:
+            requests:
+              cpu: "500m"
+              memory: "1Gi"
+            limits:
+              cpu: "1"
+              memory: "2Gi"
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 30
+            periodSeconds: 15
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 20
+            periodSeconds: 10
