@@ -245,6 +245,16 @@ if ! docker compose version >/dev/null 2>&1; then
   exit 1
 fi
 
+export MLFLOW_BIND_IP="${mlflow_bind_ip}"
+export MLFLOW_HOST_PORT="${mlflow_host_port}"
+export API_BIND_IP="${api_bind_ip}"
+export API_HOST_PORT="${api_host_port}"
+export STREAMLIT_BIND_IP="${streamlit_bind_ip}"
+export STREAMLIT_HOST_PORT="${streamlit_host_port}"
+
+# Stop the existing Medvision stack first so redeploys are idempotent.
+docker compose -f docker-compose.yml -f docker-compose.prod.yml down --remove-orphans || true
+
 if command -v ss >/dev/null 2>&1; then
   if ss -ltn "sport = :${mlflow_host_port}" | awk 'NR>1 {print}' | grep -q .; then
     echo "[deploy][error] Host port ${mlflow_host_port} is already in use on VPS." >&2
@@ -266,14 +276,6 @@ if command -v ss >/dev/null 2>&1; then
   fi
 fi
 
-export MLFLOW_BIND_IP="${mlflow_bind_ip}"
-export MLFLOW_HOST_PORT="${mlflow_host_port}"
-export API_BIND_IP="${api_bind_ip}"
-export API_HOST_PORT="${api_host_port}"
-export STREAMLIT_BIND_IP="${streamlit_bind_ip}"
-export STREAMLIT_HOST_PORT="${streamlit_host_port}"
-
-docker compose -f docker-compose.yml -f docker-compose.prod.yml down --remove-orphans || true
 docker compose -f docker-compose.yml -f docker-compose.prod.yml up --build -d --remove-orphans
 docker compose -f docker-compose.yml -f docker-compose.prod.yml ps
 EOF
