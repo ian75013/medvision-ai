@@ -169,6 +169,10 @@ deploy_vps_manual() {
   local api_host_port="${API_HOST_PORT:-18000}"
   local streamlit_bind_ip="${STREAMLIT_BIND_IP:-127.0.0.1}"
   local streamlit_host_port="${STREAMLIT_HOST_PORT:-18501}"
+  local nginx_http_bind_ip="${NGINX_HTTP_BIND_IP:-127.0.0.1}"
+  local nginx_http_host_port="${NGINX_HTTP_HOST_PORT:-18080}"
+  local nginx_https_bind_ip="${NGINX_HTTPS_BIND_IP:-127.0.0.1}"
+  local nginx_https_host_port="${NGINX_HTTPS_HOST_PORT:-18443}"
   local sudo_mode
   local ssh_tty_args=()
   local tmp_local_script
@@ -289,6 +293,10 @@ deploy_vps_docker() {
   [ -n "$api_host_port" ] || die "API_HOST_PORT is required"
   [ -n "$streamlit_bind_ip" ] || die "STREAMLIT_BIND_IP is required"
   [ -n "$streamlit_host_port" ] || die "STREAMLIT_HOST_PORT is required"
+  [ -n "$nginx_http_bind_ip" ] || die "NGINX_HTTP_BIND_IP is required"
+  [ -n "$nginx_http_host_port" ] || die "NGINX_HTTP_HOST_PORT is required"
+  [ -n "$nginx_https_bind_ip" ] || die "NGINX_HTTPS_BIND_IP is required"
+  [ -n "$nginx_https_host_port" ] || die "NGINX_HTTPS_HOST_PORT is required"
 
   sudo_mode="$(remote_sudo_mode)"
   if [ "$sudo_mode" = "prompt" ]; then
@@ -331,6 +339,10 @@ export API_BIND_IP="${api_bind_ip}"
 export API_HOST_PORT="${api_host_port}"
 export STREAMLIT_BIND_IP="${streamlit_bind_ip}"
 export STREAMLIT_HOST_PORT="${streamlit_host_port}"
+export NGINX_HTTP_BIND_IP="${nginx_http_bind_ip}"
+export NGINX_HTTP_HOST_PORT="${nginx_http_host_port}"
+export NGINX_HTTPS_BIND_IP="${nginx_https_bind_ip}"
+export NGINX_HTTPS_HOST_PORT="${nginx_https_host_port}"
 
 run_compose() {
   run_sudo env \
@@ -340,6 +352,10 @@ run_compose() {
     API_HOST_PORT="${api_host_port}" \
     STREAMLIT_BIND_IP="${streamlit_bind_ip}" \
     STREAMLIT_HOST_PORT="${streamlit_host_port}" \
+    NGINX_HTTP_BIND_IP="${nginx_http_bind_ip}" \
+    NGINX_HTTP_HOST_PORT="${nginx_http_host_port}" \
+    NGINX_HTTPS_BIND_IP="${nginx_https_bind_ip}" \
+    NGINX_HTTPS_HOST_PORT="${nginx_https_host_port}" \
     docker compose -f docker-compose.yml -f docker-compose.prod.yml "\$@"
 }
 
@@ -362,6 +378,18 @@ if command -v ss >/dev/null 2>&1; then
     echo "[deploy][error] Host port ${streamlit_host_port} is already in use on VPS." >&2
     echo "[deploy][error] Set STREAMLIT_HOST_PORT in your OVH env file, then redeploy." >&2
     ss -ltnp "sport = :${streamlit_host_port}" || true
+    exit 1
+  fi
+  if ss -ltn "sport = :${nginx_http_host_port}" | awk 'NR>1 {print}' | grep -q .; then
+    echo "[deploy][error] Host port ${nginx_http_host_port} is already in use on VPS." >&2
+    echo "[deploy][error] Set NGINX_HTTP_HOST_PORT in your OVH env file, then redeploy." >&2
+    ss -ltnp "sport = :${nginx_http_host_port}" || true
+    exit 1
+  fi
+  if ss -ltn "sport = :${nginx_https_host_port}" | awk 'NR>1 {print}' | grep -q .; then
+    echo "[deploy][error] Host port ${nginx_https_host_port} is already in use on VPS." >&2
+    echo "[deploy][error] Set NGINX_HTTPS_HOST_PORT in your OVH env file, then redeploy." >&2
+    ss -ltnp "sport = :${nginx_https_host_port}" || true
     exit 1
   fi
 fi
