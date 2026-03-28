@@ -110,6 +110,10 @@ deploy_vps_manual() {
   local api_host_port="${API_HOST_PORT:-18000}"
   local streamlit_bind_ip="${STREAMLIT_BIND_IP:-127.0.0.1}"
   local streamlit_host_port="${STREAMLIT_HOST_PORT:-18501}"
+  local api_bind_ip="${API_BIND_IP:-127.0.0.1}"
+  local api_host_port="${API_HOST_PORT:-18000}"
+  local streamlit_bind_ip="${STREAMLIT_BIND_IP:-127.0.0.1}"
+  local streamlit_host_port="${STREAMLIT_HOST_PORT:-18501}"
 
   [ -n "$ssh_user" ] || die "SSH_USER is required"
   [ -n "$ssh_host" ] || die "SSH_HOST is required"
