@@ -140,9 +140,11 @@ if [ ! -d "${app_dir}/.git" ]; then
   git clone "${git_repo}" "${app_dir}"
 fi
 cd "${app_dir}"
+git remote set-url origin "${git_repo}"
 git fetch --all --prune
-git checkout "${git_branch}"
-git pull --ff-only origin "${git_branch}"
+git reset --hard HEAD
+git clean -fd
+git checkout -B "${git_branch}" "origin/${git_branch}"
 EOF
 
   chmod +x "$tmp_local_script"
