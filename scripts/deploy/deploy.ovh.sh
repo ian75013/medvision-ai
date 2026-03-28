@@ -34,15 +34,11 @@ if [ "${EUID:-$(id -u)}" -eq 0 ]; then
   echo "[deploy-ovh] Warning: local sudo is not required. Run this script as your normal user." >&2
 fi
 
-if [ -z "${SUDO_PASSWORD:-}" ] && [ "${ASK_SUDO_PASSWORD:-false}" = "true" ]; then
-  if [ -t 0 ]; then
-    read -r -s -p "Remote sudo password for ${SSH_USER:-user}@${SSH_HOST:-host}: " SUDO_PASSWORD
-    echo
-    export SUDO_PASSWORD
-  else
-    echo "ASK_SUDO_PASSWORD=true but no interactive terminal available." >&2
-    exit 1
-  fi
+if [ "${ASK_SUDO_PASSWORD:-false}" = "true" ]; then
+  export USE_REMOTE_SUDO_PROMPT=true
+  SUDO_PASSWORD=""
+else
+  export USE_REMOTE_SUDO_PROMPT=false
 fi
 
 configure_caddy() {
@@ -55,6 +51,11 @@ configure_caddy() {
   local sudo_password="${SUDO_PASSWORD:-}"
   local api_host_port="${API_HOST_PORT:-18000}"
   local streamlit_host_port="${STREAMLIT_HOST_PORT:-18501}"
+  local ssh_tty_args=()
+
+  if [ -z "$sudo_password" ]; then
+    ssh_tty_args=(-tt)
+  fi
 
   if [ -z "$api_domain" ] || [ -z "$app_domain" ] || [ -z "$caddy_email" ]; then
     echo "Caddy provisioning skipped: set API_DOMAIN, APP_DOMAIN and CADDY_EMAIL in env file." >&2
@@ -68,48 +69,62 @@ configure_caddy() {
 
   local ssh_target="${ssh_user}@${ssh_host}"
 
-  if [ "$XTRACE_WAS_ENABLED" -eq 1 ]; then
-    set +x
-  fi
-  ssh -p "$ssh_port" "$ssh_target" "SUDO_PASSWORD=$(printf %q "$sudo_password") bash -s" <<EOF
+  # Create a temporary installation script
+  local tmp_local_script
+  tmp_local_script="$(mktemp)"
+  local tmp_remote_script="/tmp/medvision-caddy-install.sh"
+
+  cat > "$tmp_local_script" <<'SCRIPT_EOF'
+#!/bin/bash
 set -euo pipefail
 
-run_sudo() {
-  if [ -n "\${SUDO_PASSWORD:-}" ]; then
-    printf '%s\n' "\$SUDO_PASSWORD" | sudo -S -p '' "\$@"
-  else
-    sudo "\$@"
-  fi
-}
+API_DOMAIN="${API_DOMAIN}"
+APP_DOMAIN="${APP_DOMAIN}"
+CADDY_EMAIL="${CADDY_EMAIL}"
+API_HOST_PORT="${API_HOST_PORT}"
+STREAMLIT_HOST_PORT="${STREAMLIT_HOST_PORT}"
 
-run_sudo apt-get update
-run_sudo apt-get install -y debian-keyring debian-archive-keyring apt-transport-https curl gpg
-curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | run_sudo gpg --batch --yes --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
-curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | run_sudo tee /etc/apt/sources.list.d/caddy-stable.list >/dev/null
-run_sudo apt-get update
-run_sudo apt-get install -y caddy
+sudo apt-get update
+sudo apt-get install -y debian-keyring debian-archive-keyring apt-transport-https curl gpg
+curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | sudo gpg --batch --yes --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
+curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | sudo tee /etc/apt/sources.list.d/caddy-stable.list >/dev/null
+sudo apt-get update
+sudo apt-get install -y caddy
 
-run_sudo tee /etc/caddy/Caddyfile >/dev/null <<CADDY
+sudo tee /etc/caddy/Caddyfile >/dev/null <<CADDY
 {
-  email ${caddy_email}
+  email ${CADDY_EMAIL}
 }
 
-${api_domain} {
+${API_DOMAIN} {
   encode gzip zstd
-  reverse_proxy 127.0.0.1:${api_host_port}
+  reverse_proxy 127.0.0.1:${API_HOST_PORT}
 }
 
-${app_domain} {
+${APP_DOMAIN} {
   encode gzip zstd
-  reverse_proxy 127.0.0.1:${streamlit_host_port}
+  reverse_proxy 127.0.0.1:${STREAMLIT_HOST_PORT}
 }
 CADDY
 
-run_sudo caddy validate --config /etc/caddy/Caddyfile
-run_sudo systemctl enable caddy
-run_sudo systemctl reload caddy || run_sudo systemctl restart caddy
-run_sudo systemctl --no-pager status caddy | cat
-EOF
+sudo caddy validate --config /etc/caddy/Caddyfile
+sudo systemctl enable caddy
+sudo systemctl reload caddy || sudo systemctl restart caddy
+sudo systemctl --no-pager status caddy | cat
+SCRIPT_EOF
+
+  chmod +x "$tmp_local_script"
+
+  if [ "$XTRACE_WAS_ENABLED" -eq 1 ]; then
+    set +x
+  fi
+
+  scp -P "$ssh_port" "$tmp_local_script" "${ssh_target}:${tmp_remote_script}"
+
+  ssh "${ssh_tty_args[@]}" -p "$ssh_port" "$ssh_target" \
+    "API_DOMAIN=$(printf %q "$api_domain") APP_DOMAIN=$(printf %q "$app_domain") CADDY_EMAIL=$(printf %q "$caddy_email") API_HOST_PORT=$(printf %q "$api_host_port") STREAMLIT_HOST_PORT=$(printf %q "$streamlit_host_port") bash ${tmp_remote_script}"
+
+  rm -f "$tmp_local_script"
   if [ "$XTRACE_WAS_ENABLED" -eq 1 ]; then
     set -x
   fi
@@ -121,10 +136,9 @@ configure_nginx() {
   local ssh_port="${SSH_PORT:-22}"
   local api_domain="${API_DOMAIN:-}"
   local app_domain="${APP_DOMAIN:-}"
-  local sudo_password="${SUDO_PASSWORD:-}"
+  local app_dir="${APP_DIR:-/opt/medvision-ai}"
   local api_host_port="${API_HOST_PORT:-18000}"
   local streamlit_host_port="${STREAMLIT_HOST_PORT:-18501}"
-  local nginx_site_name="${NGINX_SITE_NAME:-medvision-ai}"
   local nginx_ssl_cert="${NGINX_SSL_CERT:-}"
   local nginx_ssl_key="${NGINX_SSL_KEY:-}"
   local api_ssl_cert="${API_SSL_CERT:-${nginx_ssl_cert}}"
@@ -145,7 +159,6 @@ configure_nginx() {
   local ssh_target="${ssh_user}@${ssh_host}"
   local tmp_local_conf
   tmp_local_conf="$(mktemp)"
-  local tmp_remote_conf="/tmp/${nginx_site_name}.conf"
   local nginx_template_http="$ROOT_DIR/deploy/reverse-proxy/nginx/medvision.http.template.conf"
   local nginx_template_https="$ROOT_DIR/deploy/reverse-proxy/nginx/medvision.https.template.conf"
   local nginx_template_selected
@@ -154,8 +167,7 @@ configure_nginx() {
     nginx_template_selected="$nginx_template_https"
   else
     nginx_template_selected="$nginx_template_http"
-    echo "[deploy-ovh] Nginx SSL cert paths not configured; installed HTTP-only vhosts for ${nginx_site_name}." >&2
-    echo "[deploy-ovh] HTTPS requests may still hit another existing 443 server block on the VPS." >&2
+    echo "[deploy-ovh] Nginx config generated in HTTP-only mode for the Docker service." >&2
   fi
 
   [ -f "$nginx_template_selected" ] || {
@@ -179,29 +191,12 @@ configure_nginx() {
   if [ "$XTRACE_WAS_ENABLED" -eq 1 ]; then
     set +x
   fi
-  scp -P "$ssh_port" "$tmp_local_conf" "${ssh_target}:${tmp_remote_conf}"
-  ssh -p "$ssh_port" "$ssh_target" "SUDO_PASSWORD=$(printf %q "$sudo_password") NGINX_SITE_NAME=$(printf %q "$nginx_site_name") TMP_REMOTE_CONF=$(printf %q "$tmp_remote_conf") bash -s" <<'EOF'
-set -euo pipefail
 
-run_sudo() {
-  if [ -n "\${SUDO_PASSWORD:-}" ]; then
-    printf '%s\n' "\$SUDO_PASSWORD" | sudo -S -p '' "\$@"
-  else
-    sudo "\$@"
-  fi
-}
+  ssh -p "$ssh_port" "$ssh_target" "mkdir -p $(printf %q "$app_dir")/deploy/reverse-proxy/nginx"
+  scp -P "$ssh_port" "$tmp_local_conf" "${ssh_target}:$(printf %q "$app_dir")/deploy/reverse-proxy/nginx/medvision.conf"
 
-run_sudo apt-get update
-run_sudo apt-get install -y nginx
-run_sudo install -m 644 "$TMP_REMOTE_CONF" "/etc/nginx/sites-available/${NGINX_SITE_NAME}.conf"
-run_sudo ln -sf "/etc/nginx/sites-available/${NGINX_SITE_NAME}.conf" "/etc/nginx/sites-enabled/${NGINX_SITE_NAME}.conf"
-echo "[deploy-ovh] Generated nginx site: /etc/nginx/sites-available/${NGINX_SITE_NAME}.conf" >&2
-run_sudo sed -n '1,200p' "/etc/nginx/sites-available/${NGINX_SITE_NAME}.conf" | cat
-run_sudo nginx -t
-run_sudo systemctl enable nginx
-run_sudo systemctl reload nginx || run_sudo systemctl restart nginx
-run_sudo systemctl --no-pager status nginx | cat
-EOF
+  echo "[deploy-ovh] Nginx Docker config uploaded to ${app_dir}/deploy/reverse-proxy/nginx/medvision.conf" >&2
+
   rm -f "$tmp_local_conf"
   if [ "$XTRACE_WAS_ENABLED" -eq 1 ]; then
     set -x

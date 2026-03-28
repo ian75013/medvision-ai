@@ -18,6 +18,51 @@ require_cmd() {
   command -v "$1" >/dev/null 2>&1 || die "Missing command: $1"
 }
 
+remote_sync_workspace_overlay() {
+  local ssh_target="$1"
+  local ssh_port="$2"
+  local app_dir="$3"
+
+  tar \
+    --exclude='.git' \
+    --exclude='.venv' \
+    --exclude='__pycache__' \
+    --exclude='.pytest_cache' \
+    --exclude='artifacts' \
+    --exclude='data' \
+    --exclude='mlruns' \
+    --exclude='notebooks' \
+    --exclude='tex' \
+    -czf - \
+    -C "$ROOT_DIR" . | ssh -p "$ssh_port" "$ssh_target" "mkdir -p $(printf %q "$app_dir") && tar -xzf - -C $(printf %q "$app_dir")"
+}
+
+remote_sudo_mode() {
+  if [ "${ASK_SUDO_PASSWORD:-false}" = "true" ]; then
+    printf '%s' "prompt"
+  elif [ -n "${SUDO_PASSWORD:-}" ]; then
+    printf '%s' "stdin"
+  else
+    printf '%s' "plain"
+  fi
+}
+
+write_remote_sudo_helpers() {
+  local mode="$1"
+  cat <<EOF
+run_sudo() {
+  if [ "$mode" = "prompt" ]; then
+    sudo -v
+    sudo "\$@"
+  elif [ "$mode" = "stdin" ]; then
+    printf '%s\\n' "\${SUDO_PASSWORD}" | sudo -S -p '' "\$@"
+  else
+    sudo "\$@"
+  fi
+}
+EOF
+}
+
 usage() {
   cat <<'EOF'
 Usage:
@@ -66,17 +111,24 @@ remote_bootstrap_repo() {
   local git_branch="$5"
   local sudo_password="${SUDO_PASSWORD:-}"
   local remote_user="${ssh_target%@*}"
+  local sudo_mode
+  sudo_mode="$(remote_sudo_mode)"
+  local ssh_tty_args=()
+  local tmp_local_script
+  local tmp_remote_script
 
-  ssh -p "$ssh_port" "$ssh_target" "SUDO_PASSWORD=$(printf %q "$sudo_password") bash -s" <<EOF
+  if [ "$sudo_mode" = "prompt" ]; then
+    ssh_tty_args=(-tt)
+  fi
+
+  tmp_local_script="$(mktemp)"
+  tmp_remote_script="/tmp/${APP_NAME}-bootstrap-repo.sh"
+
+  cat > "$tmp_local_script" <<EOF
+#!/usr/bin/env bash
 set -euo pipefail
 
-run_sudo() {
-  if [ -n "\${SUDO_PASSWORD:-}" ]; then
-    printf '%s\n' "\$SUDO_PASSWORD" | sudo -S -p '' "\$@"
-  else
-    sudo "\$@"
-  fi
-}
+$(write_remote_sudo_helpers "$sudo_mode")
 
 if ! command -v git >/dev/null 2>&1; then
   run_sudo apt-get update
@@ -92,6 +144,11 @@ git fetch --all --prune
 git checkout "${git_branch}"
 git pull --ff-only origin "${git_branch}"
 EOF
+
+  chmod +x "$tmp_local_script"
+  scp -P "$ssh_port" "$tmp_local_script" "${ssh_target}:${tmp_remote_script}" >/dev/null
+  ssh "${ssh_tty_args[@]}" -p "$ssh_port" "$ssh_target" "SUDO_PASSWORD=$(printf %q "$sudo_password") bash ${tmp_remote_script}"
+  rm -f "$tmp_local_script"
 }
 
 deploy_vps_manual() {
@@ -110,27 +167,35 @@ deploy_vps_manual() {
   local api_host_port="${API_HOST_PORT:-18000}"
   local streamlit_bind_ip="${STREAMLIT_BIND_IP:-127.0.0.1}"
   local streamlit_host_port="${STREAMLIT_HOST_PORT:-18501}"
+  local sudo_mode
+  local ssh_tty_args=()
+  local tmp_local_script
+  local tmp_remote_script
 
   [ -n "$ssh_user" ] || die "SSH_USER is required"
   [ -n "$ssh_host" ] || die "SSH_HOST is required"
   [ -n "$git_repo" ] || die "GIT_REPO is required"
 
+  sudo_mode="$(remote_sudo_mode)"
+  if [ "$sudo_mode" = "prompt" ]; then
+    ssh_tty_args=(-tt)
+  fi
+
   local ssh_target="${ssh_user}@${ssh_host}"
   log "Syncing repository on VPS"
   remote_bootstrap_repo "$ssh_target" "$ssh_port" "$app_dir" "$git_repo" "$git_branch"
+  log "Syncing local workspace overlay to VPS"
+  remote_sync_workspace_overlay "$ssh_target" "$ssh_port" "$app_dir"
 
   log "Installing runtime and configuring systemd services"
-  ssh -p "$ssh_port" "$ssh_target" "SUDO_PASSWORD=$(printf %q "$sudo_password") bash -s" <<EOF
+  tmp_local_script="$(mktemp)"
+  tmp_remote_script="/tmp/${APP_NAME}-manual-deploy.sh"
+  cat > "$tmp_local_script" <<EOF
+#!/usr/bin/env bash
 set -euo pipefail
 cd "${app_dir}"
 
-run_sudo() {
-  if [ -n "\${SUDO_PASSWORD:-}" ]; then
-    printf '%s\n' "\$SUDO_PASSWORD" | sudo -S -p '' "\$@"
-  else
-    sudo "\$@"
-  fi
-}
+$(write_remote_sudo_helpers "$sudo_mode")
 
 run_sudo apt-get update
 run_sudo apt-get install -y curl python3 python3-venv python3-pip
@@ -184,6 +249,11 @@ run_sudo systemctl restart ${APP_NAME}-api ${APP_NAME}-streamlit
 run_sudo systemctl --no-pager status ${APP_NAME}-api ${APP_NAME}-streamlit | cat
 EOF
 
+  chmod +x "$tmp_local_script"
+  scp -P "$ssh_port" "$tmp_local_script" "${ssh_target}:${tmp_remote_script}" >/dev/null
+  ssh "${ssh_tty_args[@]}" -p "$ssh_port" "$ssh_target" "SUDO_PASSWORD=$(printf %q "$sudo_password") bash ${tmp_remote_script}"
+  rm -f "$tmp_local_script"
+
   log "VPS manual deployment completed"
 }
 
@@ -203,6 +273,10 @@ deploy_vps_docker() {
   local api_host_port="${API_HOST_PORT:-18000}"
   local streamlit_bind_ip="${STREAMLIT_BIND_IP:-127.0.0.1}"
   local streamlit_host_port="${STREAMLIT_HOST_PORT:-18501}"
+  local sudo_mode
+  local ssh_tty_args=()
+  local tmp_local_script
+  local tmp_remote_script
 
   [ -n "$ssh_user" ] || die "SSH_USER is required"
   [ -n "$ssh_host" ] || die "SSH_HOST is required"
@@ -214,6 +288,11 @@ deploy_vps_docker() {
   [ -n "$streamlit_bind_ip" ] || die "STREAMLIT_BIND_IP is required"
   [ -n "$streamlit_host_port" ] || die "STREAMLIT_HOST_PORT is required"
 
+  sudo_mode="$(remote_sudo_mode)"
+  if [ "$sudo_mode" = "prompt" ]; then
+    ssh_tty_args=(-tt)
+  fi
+
   if [ "$mlflow_bind_ip" = "0.0.0.0" ] || [ "$mlflow_bind_ip" = "127.0.0.1" ]; then
     die "MLflow must stay VPN-only on VPS. Set MLFLOW_BIND_IP to your VPN interface IP, e.g. 10.8.0.1"
   fi
@@ -221,26 +300,25 @@ deploy_vps_docker() {
   local ssh_target="${ssh_user}@${ssh_host}"
   log "Syncing repository on VPS"
   remote_bootstrap_repo "$ssh_target" "$ssh_port" "$app_dir" "$git_repo" "$git_branch"
+  log "Syncing local workspace overlay to VPS"
+  remote_sync_workspace_overlay "$ssh_target" "$ssh_port" "$app_dir"
 
   log "Installing Docker and launching services"
-  ssh -p "$ssh_port" "$ssh_target" "SUDO_PASSWORD=$(printf %q "$sudo_password") bash -s" <<EOF
+  tmp_local_script="$(mktemp)"
+  tmp_remote_script="/tmp/${APP_NAME}-docker-deploy.sh"
+  cat > "$tmp_local_script" <<EOF
+#!/usr/bin/env bash
 set -euo pipefail
 cd "${app_dir}"
 
-run_sudo() {
-  if [ -n "\${SUDO_PASSWORD:-}" ]; then
-    printf '%s\n' "\$SUDO_PASSWORD" | sudo -S -p '' "\$@"
-  else
-    sudo "\$@"
-  fi
-}
+$(write_remote_sudo_helpers "$sudo_mode")
 
 if ! command -v docker >/dev/null 2>&1; then
   curl -fsSL https://get.docker.com | sh
   run_sudo usermod -aG docker ${ssh_user}
 fi
 
-if ! docker compose version >/dev/null 2>&1; then
+if ! run_sudo docker compose version >/dev/null 2>&1; then
   echo "docker compose plugin is required" >&2
   exit 1
 fi
@@ -252,8 +330,18 @@ export API_HOST_PORT="${api_host_port}"
 export STREAMLIT_BIND_IP="${streamlit_bind_ip}"
 export STREAMLIT_HOST_PORT="${streamlit_host_port}"
 
-# Stop the existing Medvision stack first so redeploys are idempotent.
-docker compose -f docker-compose.yml -f docker-compose.prod.yml down --remove-orphans || true
+run_compose() {
+  run_sudo env \
+    MLFLOW_BIND_IP="${mlflow_bind_ip}" \
+    MLFLOW_HOST_PORT="${mlflow_host_port}" \
+    API_BIND_IP="${api_bind_ip}" \
+    API_HOST_PORT="${api_host_port}" \
+    STREAMLIT_BIND_IP="${streamlit_bind_ip}" \
+    STREAMLIT_HOST_PORT="${streamlit_host_port}" \
+    docker compose -f docker-compose.yml -f docker-compose.prod.yml "\$@"
+}
+
+run_compose down --remove-orphans || true
 
 if command -v ss >/dev/null 2>&1; then
   if ss -ltn "sport = :${mlflow_host_port}" | awk 'NR>1 {print}' | grep -q .; then
@@ -276,9 +364,14 @@ if command -v ss >/dev/null 2>&1; then
   fi
 fi
 
-docker compose -f docker-compose.yml -f docker-compose.prod.yml up --build -d --remove-orphans
-docker compose -f docker-compose.yml -f docker-compose.prod.yml ps
+run_compose up --build -d --remove-orphans
+run_compose ps
 EOF
+
+  chmod +x "$tmp_local_script"
+  scp -P "$ssh_port" "$tmp_local_script" "${ssh_target}:${tmp_remote_script}" >/dev/null
+  ssh "${ssh_tty_args[@]}" -p "$ssh_port" "$ssh_target" "SUDO_PASSWORD=$(printf %q "$sudo_password") bash ${tmp_remote_script}"
+  rm -f "$tmp_local_script"
 
   log "VPS docker deployment completed"
 }

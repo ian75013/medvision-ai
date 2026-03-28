@@ -1,4 +1,17 @@
 services:
+  nginx:
+    image: nginx:latest
+    ports:
+      - "127.0.0.1:80:80"
+      - "127.0.0.1:443:443"
+    volumes:
+      - ./deploy/reverse-proxy/nginx/medvision.conf:/etc/nginx/conf.d/medvision.conf:ro
+      - ./deploy/certs:/etc/nginx/certs:ro
+    depends_on:
+      - api
+      - streamlit
+    restart: unless-stopped
+
   mlflow:
     image: python:3.10-slim
     working_dir: /app
