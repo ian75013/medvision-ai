@@ -36,6 +36,8 @@ configure_caddy() {
   local app_domain="${APP_DOMAIN:-}"
   local caddy_email="${CADDY_EMAIL:-}"
   local sudo_password="${SUDO_PASSWORD:-}"
+  local api_host_port="${API_HOST_PORT:-18000}"
+  local streamlit_host_port="${STREAMLIT_HOST_PORT:-18501}"
 
   if [ -z "$api_domain" ] || [ -z "$app_domain" ] || [ -z "$caddy_email" ]; then
     echo "Caddy provisioning skipped: set API_DOMAIN, APP_DOMAIN and CADDY_EMAIL in env file." >&2
@@ -74,12 +76,12 @@ run_sudo tee /etc/caddy/Caddyfile >/dev/null <<CADDY
 
 ${api_domain} {
   encode gzip zstd
-  reverse_proxy 127.0.0.1:8000
+  reverse_proxy 127.0.0.1:${api_host_port}
 }
 
 ${app_domain} {
   encode gzip zstd
-  reverse_proxy 127.0.0.1:8501
+  reverse_proxy 127.0.0.1:${streamlit_host_port}
 }
 CADDY
 

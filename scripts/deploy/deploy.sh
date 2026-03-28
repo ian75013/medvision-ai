@@ -106,6 +106,10 @@ deploy_vps_manual() {
   local sudo_password="${SUDO_PASSWORD:-}"
   local mlflow_bind_ip="${MLFLOW_BIND_IP:-10.8.0.1}"
   local mlflow_host_port="${MLFLOW_HOST_PORT:-5000}"
+  local api_bind_ip="${API_BIND_IP:-127.0.0.1}"
+  local api_host_port="${API_HOST_PORT:-18000}"
+  local streamlit_bind_ip="${STREAMLIT_BIND_IP:-127.0.0.1}"
+  local streamlit_host_port="${STREAMLIT_HOST_PORT:-18501}"
 
   [ -n "$ssh_user" ] || die "SSH_USER is required"
   [ -n "$ssh_host" ] || die "SSH_HOST is required"
@@ -201,6 +205,10 @@ deploy_vps_docker() {
   [ -n "$git_repo" ] || die "GIT_REPO is required"
   [ -n "$mlflow_bind_ip" ] || die "MLFLOW_BIND_IP is required"
   [ -n "$mlflow_host_port" ] || die "MLFLOW_HOST_PORT is required"
+  [ -n "$api_bind_ip" ] || die "API_BIND_IP is required"
+  [ -n "$api_host_port" ] || die "API_HOST_PORT is required"
+  [ -n "$streamlit_bind_ip" ] || die "STREAMLIT_BIND_IP is required"
+  [ -n "$streamlit_host_port" ] || die "STREAMLIT_HOST_PORT is required"
 
   if [ "$mlflow_bind_ip" = "0.0.0.0" ] || [ "$mlflow_bind_ip" = "127.0.0.1" ]; then
     die "MLflow must stay VPN-only on VPS. Set MLFLOW_BIND_IP to your VPN interface IP, e.g. 10.8.0.1"
@@ -240,13 +248,29 @@ if command -v ss >/dev/null 2>&1; then
     ss -ltnp "sport = :${mlflow_host_port}" || true
     exit 1
   fi
+  if ss -ltn "sport = :${api_host_port}" | awk 'NR>1 {print}' | grep -q .; then
+    echo "[deploy][error] Host port ${api_host_port} is already in use on VPS." >&2
+    echo "[deploy][error] Set API_HOST_PORT in your OVH env file, then redeploy." >&2
+    ss -ltnp "sport = :${api_host_port}" || true
+    exit 1
+  fi
+  if ss -ltn "sport = :${streamlit_host_port}" | awk 'NR>1 {print}' | grep -q .; then
+    echo "[deploy][error] Host port ${streamlit_host_port} is already in use on VPS." >&2
+    echo "[deploy][error] Set STREAMLIT_HOST_PORT in your OVH env file, then redeploy." >&2
+    ss -ltnp "sport = :${streamlit_host_port}" || true
+    exit 1
+  fi
 fi
 
 export MLFLOW_BIND_IP="${mlflow_bind_ip}"
 export MLFLOW_HOST_PORT="${mlflow_host_port}"
+export API_BIND_IP="${api_bind_ip}"
+export API_HOST_PORT="${api_host_port}"
+export STREAMLIT_BIND_IP="${streamlit_bind_ip}"
+export STREAMLIT_HOST_PORT="${streamlit_host_port}"
 
-docker compose -f docker-compose.yml -f docker-compose.prod.yml down || true
-docker compose -f docker-compose.yml -f docker-compose.prod.yml up --build -d
+docker compose -f docker-compose.yml -f docker-compose.prod.yml down --remove-orphans || true
+docker compose -f docker-compose.yml -f docker-compose.prod.yml up --build -d --remove-orphans
 docker compose -f docker-compose.yml -f docker-compose.prod.yml ps
 EOF
 
