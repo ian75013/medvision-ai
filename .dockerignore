@@ -1,0 +1,20 @@
+.git
+.github
+.venv
+.venv-wsl
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+*.swp
+*.swo
+notebooks/
+tex/
+mlruns/
+terraform/
+
+# Large local data trees are typically mounted, not baked
+# Keep processed samples if needed by UI, skip raw datasets by default
+data/raw/
+
+# Keep runtime artifacts when present; do not exclude artifacts/

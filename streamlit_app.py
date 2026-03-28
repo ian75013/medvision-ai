@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 from pathlib import Path
 import tempfile
 from typing import Any
@@ -7,6 +8,7 @@ from typing import Any
 import numpy as np
 import pandas as pd
 import streamlit as st
+from PIL import Image
 
 from src.preprocessing.image_loader import load_and_preprocess_image
 from src.registry.model_registry import compare_models, get_model_entry, load_registry, load_tf_model
@@ -19,11 +21,17 @@ def _is_supported_image(path: Path) -> bool:
     return path.is_file() and path.suffix.lower() in IMAGE_EXTENSIONS
 
 
-def _safe_rel_display(path: Path, root: Path) -> str:
+def _sample_public_id(path: Path) -> str:
+    digest = hashlib.blake2s(str(path).encode("utf-8"), digest_size=5).hexdigest()
+    return f"sample-{digest}"
+
+
+def _load_preview_image(path: Path) -> np.ndarray | None:
     try:
-        return str(path.resolve().relative_to(root.resolve()))
+        with Image.open(path) as img:
+            return np.array(img.convert("RGB"))
     except Exception:
-        return path.name
+        return None
 
 
 def _normalize_label(value: str) -> str:
@@ -76,12 +84,12 @@ def _collect_images_from_dirs(
             if not _is_supported_image(path):
                 continue
             label_hint = _infer_label_from_path(path, expected_labels)
-            rel = _safe_rel_display(path, root)
+            sample_id = _sample_public_id(path)
             sample = {
                 "path": path,
                 "label": label_hint,
-                "source": rel,
-                "display": f"{label_hint} | {rel}",
+                "sample_id": sample_id,
+                "display": f"{label_hint} | {sample_id}",
             }
             if expected_labels and per_label_limit is not None and label_hint in buckets:
                 if len(buckets[label_hint]) < per_label_limit:
@@ -148,12 +156,12 @@ def _collect_images_from_manifest(
             continue
         raw_label = str(row.get("label", candidate.parent.name))
         label_hint = _canonical_label(raw_label, expected_labels)
-        rel = _safe_rel_display(candidate, root)
+        sample_id = _sample_public_id(candidate)
         sample = {
             "path": candidate,
             "label": label_hint,
-            "source": rel,
-            "display": f"{label_hint} | {rel}",
+            "sample_id": sample_id,
+            "display": f"{label_hint} | {sample_id}",
         }
         if expected_labels and per_label_limit is not None and label_hint in buckets:
             if len(buckets[label_hint]) < per_label_limit:
@@ -195,7 +203,9 @@ def _filter_samples(samples: list[dict[str, Any]], labels: list[str], query: str
         filtered = [
             sample
             for sample in filtered
-            if q in str(sample.get("source", "")).lower() or q in str(sample.get("display", "")).lower()
+            if q in str(sample.get("sample_id", "")).lower()
+            or q in str(sample.get("display", "")).lower()
+            or q in str(sample.get("label", "")).lower()
         ]
     return filtered
 
@@ -217,9 +227,9 @@ def _recommended_samples(samples: list[dict[str, Any]], max_items: int = 4) -> l
             return picks
 
     if len(picks) < max_items:
-        existing = {str(item.get("source", item.get("display", ""))) for item in picks}
+        existing = {str(item.get("sample_id", item.get("display", ""))) for item in picks}
         for sample in samples:
-            key = str(sample.get("source", sample.get("display", "")))
+            key = str(sample.get("sample_id", sample.get("display", "")))
             if key in existing:
                 continue
             picks.append(sample)
@@ -586,7 +596,7 @@ with tab_predict:
                 with c_filter1:
                     chosen_labels = _render_fixed_label_filters(problem=problem, labels=available_labels)
                 with c_filter2:
-                    path_query = st.text_input("Search filename/path", value="")
+                    path_query = st.text_input("Search sample id/label", value="")
 
                 filtered_samples = _filter_samples(db_samples, labels=chosen_labels, query=path_query)
                 if not filtered_samples:
@@ -598,7 +608,9 @@ with tab_predict:
                         rec_cols = st.columns(len(recs))
                         for idx, sample in enumerate(recs):
                             with rec_cols[idx]:
-                                st.image(str(sample["path"]), caption=sample["label"], use_container_width=True)
+                                preview = _load_preview_image(Path(sample["path"]))
+                                if preview is not None:
+                                    st.image(preview, caption=sample["label"], use_container_width=True)
 
                     page_size = st.select_slider("Samples per page", options=[6, 12, 18, 24], value=12)
                     total_pages = max(1, (len(filtered_samples) + page_size - 1) // page_size)
@@ -618,7 +630,9 @@ with tab_predict:
                     preview_cols = st.columns(3)
                     for idx, sample in enumerate(page_samples[:6]):
                         with preview_cols[idx % 3]:
-                            st.image(str(sample["path"]), caption=sample["label"], use_container_width=True)
+                            preview = _load_preview_image(Path(sample["path"]))
+                            if preview is not None:
+                                st.image(preview, caption=sample["label"], use_container_width=True)
 
         if uploaded is not None or selected_image_path is not None:
             left_col, right_col = st.columns([1.1, 1.4])
@@ -626,7 +640,9 @@ with tab_predict:
                 if uploaded is not None:
                     st.image(uploaded, caption="Input image", use_container_width=True)
                 else:
-                    st.image(str(selected_image_path), caption="Dataset image", use_container_width=True)
+                    selected_preview = _load_preview_image(Path(selected_image_path)) if selected_image_path else None
+                    if selected_preview is not None:
+                        st.image(selected_preview, caption="Dataset image", use_container_width=True)
 
             tmp_path: Path | None = None
             predict_path: Path | None = selected_image_path

@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: medvision-streamlit
+  namespace: medvision
+spec:
+  selector:
+    app: medvision-streamlit
+  ports:
+    - name: http
+      port: 8501
+      targetPort: 8501
+  type: ClusterIP
