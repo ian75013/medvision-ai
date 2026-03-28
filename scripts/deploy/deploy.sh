@@ -279,6 +279,10 @@ deploy_vps_docker() {
   local api_host_port="${API_HOST_PORT:-18000}"
   local streamlit_bind_ip="${STREAMLIT_BIND_IP:-127.0.0.1}"
   local streamlit_host_port="${STREAMLIT_HOST_PORT:-18501}"
+  local nginx_http_bind_ip="${NGINX_HTTP_BIND_IP:-127.0.0.1}"
+  local nginx_http_host_port="${NGINX_HTTP_HOST_PORT:-18080}"
+  local nginx_https_bind_ip="${NGINX_HTTPS_BIND_IP:-127.0.0.1}"
+  local nginx_https_host_port="${NGINX_HTTPS_HOST_PORT:-18443}"
   local sudo_mode
   local ssh_tty_args=()
   local tmp_local_script

@@ -137,6 +137,8 @@ configure_nginx() {
   local api_domain="${API_DOMAIN:-}"
   local app_domain="${APP_DOMAIN:-}"
   local app_dir="${APP_DIR:-/opt/medvision-ai}"
+  local sudo_password="${SUDO_PASSWORD:-}"
+  local nginx_http_host_port="${NGINX_HTTP_HOST_PORT:-18080}"
   local api_host_port="${API_HOST_PORT:-18000}"
   local streamlit_host_port="${STREAMLIT_HOST_PORT:-18501}"
   local nginx_ssl_cert="${NGINX_SSL_CERT:-}"
@@ -145,6 +147,11 @@ configure_nginx() {
   local api_ssl_key="${API_SSL_KEY:-${nginx_ssl_key}}"
   local app_ssl_cert="${APP_SSL_CERT:-${nginx_ssl_cert}}"
   local app_ssl_key="${APP_SSL_KEY:-${nginx_ssl_key}}"
+  local ssh_tty_args=()
+
+  if [ -z "$sudo_password" ]; then
+    ssh_tty_args=(-tt)
+  fi
 
   if [ -z "$api_domain" ] || [ -z "$app_domain" ]; then
     echo "Nginx provisioning skipped: set API_DOMAIN and APP_DOMAIN in env file." >&2
@@ -197,44 +204,78 @@ configure_nginx() {
 
   echo "[deploy-ovh] Nginx Docker config uploaded to ${app_dir}/deploy/reverse-proxy/nginx/medvision.conf" >&2
 
-  rm -f "$tmp_local_conf"
+  # Bridge public Apache vhosts to Dockerized nginx on loopback.
+  local tmp_local_apache_conf
+  tmp_local_apache_conf="$(mktemp)"
+  local tmp_remote_apache_conf="/tmp/medvision-apache-proxy.conf"
+  cat > "$tmp_local_apache_conf" <<EOF
+<IfModule mod_proxy.c>
+<IfModule mod_proxy_http.c>
+<IfModule mod_rewrite.c>
+<IfModule mod_headers.c>
+ProxyPreserveHost On
+RequestHeader set X-Forwarded-Proto expr=%{REQUEST_SCHEME}
+RewriteEngine On
+
+RewriteCond %{HTTP_HOST} ^${api_domain}
+RewriteRule ^/(.*)$ http://127.0.0.1:${nginx_http_host_port}/\$1 [P,L]
+
+RewriteCond %{HTTP_HOST} ^${app_domain}
+RewriteRule ^/(.*)$ http://127.0.0.1:${nginx_http_host_port}/\$1 [P,L]
+</IfModule>
+</IfModule>
+</IfModule>
+</IfModule>
+EOF
+
+  local tmp_local_apache_script
+  tmp_local_apache_script="$(mktemp)"
+  local tmp_remote_apache_script="/tmp/medvision-apache-proxy-install.sh"
+  cat > "$tmp_local_apache_script" <<'SCRIPT_EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+
+run_sudo() {
+  if [ "${USE_REMOTE_SUDO_PROMPT:-false}" = "true" ]; then
+    sudo -v
+    sudo "$@"
+  elif [ -n "${SUDO_PASSWORD:-}" ]; then
+    printf '%s\n' "${SUDO_PASSWORD}" | sudo -S -p '' "$@"
+  else
+    sudo "$@"
+  fi
+}
+
+if ! command -v apache2ctl >/dev/null 2>&1; then
+  echo "[deploy-ovh] Apache not detected on VPS; skipping Apache bridge setup." >&2
+  exit 0
+fi
+
+run_sudo install -m 644 "$TMP_REMOTE_APACHE_CONF" /etc/apache2/conf-available/medvision-ai-proxy.conf
+run_sudo a2enmod proxy proxy_http rewrite headers >/dev/null
+run_sudo a2enconf medvision-ai-proxy >/dev/null
+run_sudo apache2ctl configtest
+run_sudo systemctl reload apache2
+SCRIPT_EOF
+
+  chmod +x "$tmp_local_apache_conf" "$tmp_local_apache_script"
+  scp -P "$ssh_port" "$tmp_local_apache_conf" "${ssh_target}:${tmp_remote_apache_conf}"
+  scp -P "$ssh_port" "$tmp_local_apache_script" "${ssh_target}:${tmp_remote_apache_script}"
+  ssh "${ssh_tty_args[@]}" -p "$ssh_port" "$ssh_target" \
+    "SUDO_PASSWORD=$(printf %q "$sudo_password") USE_REMOTE_SUDO_PROMPT=$(printf %q "${USE_REMOTE_SUDO_PROMPT:-false}") TMP_REMOTE_APACHE_CONF=$(printf %q "$tmp_remote_apache_conf") bash ${tmp_remote_apache_script}"
+  echo "[deploy-ovh] Apache bridge configured for ${api_domain} and ${app_domain} -> 127.0.0.1:${nginx_http_host_port}" >&2
+
+  rm -f "$tmp_local_conf" "$tmp_local_apache_conf" "$tmp_local_apache_script"
   if [ "$XTRACE_WAS_ENABLED" -eq 1 ]; then
     set -x
   fi
 }
 
-case "$MODE" in
-  docker)
-    bash "$ROOT_DIR/scripts/deploy/deploy.sh" vps-docker
-    ;;
-  manual)
-    bash "$ROOT_DIR/scripts/deploy/deploy.sh" vps-manual
-    ;;
-  proxy|caddy)
-    case "$PROXY_PROVIDER" in
-      caddy)
-        configure_caddy
-        ;;
-      nginx)
-        configure_nginx
-        ;;
-      none|off)
-        echo "Proxy provisioning disabled (PROXY_PROVIDER=${PROXY_PROVIDER})." >&2
-        ;;
-      *)
-        echo "Unsupported PROXY_PROVIDER: ${PROXY_PROVIDER}. Use caddy, nginx, none." >&2
-        exit 1
-        ;;
-    esac
-    exit 0
-    ;;
-  *)
-    echo "Usage: $0 [docker|manual|proxy|caddy] [env-file]" >&2
-    exit 1
-    ;;
-esac
+provision_proxy_if_enabled() {
+  if [ "${PROVISION_CADDY:-false}" != "true" ]; then
+    return 0
+  fi
 
-if [ "${PROVISION_CADDY:-false}" = "true" ]; then
   case "$PROXY_PROVIDER" in
     caddy)
       configure_caddy
@@ -243,11 +284,30 @@ if [ "${PROVISION_CADDY:-false}" = "true" ]; then
       configure_nginx
       ;;
     none|off)
-      :
+      echo "Proxy provisioning disabled (PROXY_PROVIDER=${PROXY_PROVIDER})." >&2
       ;;
     *)
       echo "Unsupported PROXY_PROVIDER: ${PROXY_PROVIDER}. Use caddy, nginx, none." >&2
       exit 1
       ;;
   esac
-fi
+}
+
+case "$MODE" in
+  docker)
+    provision_proxy_if_enabled
+    bash "$ROOT_DIR/scripts/deploy/deploy.sh" vps-docker
+    ;;
+  manual)
+    provision_proxy_if_enabled
+    bash "$ROOT_DIR/scripts/deploy/deploy.sh" vps-manual
+    ;;
+  proxy|caddy)
+    provision_proxy_if_enabled
+    exit 0
+    ;;
+  *)
+    echo "Usage: $0 [docker|manual|proxy|caddy] [env-file]" >&2
+    exit 1
+    ;;
+esac
