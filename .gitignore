@@ -19,6 +19,11 @@ logs/
 # Edit at https://www.toptal.com/developers/gitignore?templates=latex
 .venv-wsl/
 .vscode/
+
+# Root-level secret env files (keep templates tracked)
+/.env
+/.env.*
+!/.env*.example
 ### LaTeX ###
 ## Core latex/pdflatex auxiliary files:
 *.aux

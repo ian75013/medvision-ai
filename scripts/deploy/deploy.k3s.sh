@@ -12,4 +12,4 @@ set -a
 source "$ENV_FILE"
 set +a
 
-"$ROOT_DIR/scripts/deploy/deploy.sh" k3s
+bash "$ROOT_DIR/scripts/deploy/deploy.sh" k3s

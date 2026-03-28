@@ -9,73 +9,6 @@ Scripts utilises:
 - scripts/deploy/deploy.k3s.sh
 - scripts/deploy/deploy.ovh.sh
 
-## 1) AWS (App Runner)
-
-1. Copier le template et renseigner les valeurs:
-
-```bash
-cp scripts/deploy/env.aws.example .env.aws
-```
-
-2. Deployer:
-
-```bash
-scripts/deploy/deploy.aws.sh .env.aws
-```
-
-Prerequis locaux:
-
-- aws CLI configure (credentials + region)
-- docker
-
-## 2) Azure (Container Apps)
-
-1. Copier le template et renseigner les valeurs:
-
-```bash
-cp scripts/deploy/env.azure.example .env.azure
-```
-
-2. Deployer:
-
-```bash
-scripts/deploy/deploy.azure.sh .env.azure
-```
-
-Prerequis locaux:
-
-- az login
-- extension containerapp disponible
-- docker
-
-## 3) k3s (cluster perso)
-
-1. Copier le template et renseigner les images:
-
-```bash
-cp scripts/deploy/env.k3s.example .env.k3s
-```
-
-2. Deployer:
-
-```bash
-scripts/deploy/deploy.k3s.sh .env.k3s
-```
-
-3. Verifier:
-
-```bash
-kubectl -n medvision get pods,svc
-kubectl -n medvision port-forward svc/medvision-api 8000:8000
-kubectl -n medvision port-forward svc/medvision-streamlit 8501:8501
-```
-
-Notes k3s:
-
-- les images doivent etre accessibles par les noeuds k3s
-- si registre prive: configurer imagePullSecrets dans les manifests
-- ingress optionnel dans deploy/k8s/base/ingress.yaml
-
 ## 4) OVH VPS
 
 Tu as deux modes:
@@ -96,9 +29,9 @@ Un exemple complet (valeurs fictives) est aussi disponible:
 2. Deployer:
 
 ```bash
-scripts/deploy/deploy.ovh.sh docker .env.ovh
+bash scripts/deploy/deploy.ovh.sh docker .env.ovh
 # ou
-scripts/deploy/deploy.ovh.sh manual .env.ovh
+bash scripts/deploy/deploy.ovh.sh manual .env.ovh
 ```
 
 Note: le mode docker utilise automatiquement l'overlay de production (docker-compose.prod.yml).
@@ -119,24 +52,19 @@ CADDY_EMAIL=ton-email@domaine.tld
 2. Lancer la meme commande:
 
 ```bash
-scripts/deploy/deploy.ovh.sh docker .env.ovh
+bash scripts/deploy/deploy.ovh.sh docker .env.ovh
 ```
 
 Important: les enregistrements DNS `api` et `app` doivent deja pointer vers l'IP du VPS avant d'activer Caddy, sinon le certificat TLS ne pourra pas etre emis.
 
-3. Validation:
+### Si sudo demande un mot de passe
+
+Tu peux le passer via `.env.ovh`:
 
 ```bash
-curl http://<IP_VPS>:8000/health
+SUDO_PASSWORD=ton_mot_de_passe_sudo
 ```
 
-## 5) Notes production
+Le script utilisera ce mot de passe pour les commandes sudo distantes.
 
-- API et Streamlit sont deployes en services separes.
-- prevoir un reverse proxy TLS (Caddy/Nginx/Traefik) devant les endpoints publics.
-- proteger Streamlit par authentification si expose publiquement.
-- externaliser artifacts/models et reports vers object storage pour reduire la taille des images.
-
-DNS + reverse proxy details:
-
-- docs/REVERSE_PROXY_DNS.md
+Attention: c'est sensible. Evite de versionner ce fichier.

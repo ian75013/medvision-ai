@@ -64,14 +64,26 @@ remote_bootstrap_repo() {
   local app_dir="$3"
   local git_repo="$4"
   local git_branch="$5"
+  local sudo_password="${SUDO_PASSWORD:-}"
+  local remote_user="${ssh_target%@*}"
 
-  ssh -p "$ssh_port" "$ssh_target" bash -s <<EOF
+  ssh -p "$ssh_port" "$ssh_target" "SUDO_PASSWORD=$(printf %q "$sudo_password") bash -s" <<EOF
 set -euo pipefail
+
+run_sudo() {
+  if [ -n "\${SUDO_PASSWORD:-}" ]; then
+    printf '%s\n' "\$SUDO_PASSWORD" | sudo -S -p '' "\$@"
+  else
+    sudo "\$@"
+  fi
+}
+
 if ! command -v git >/dev/null 2>&1; then
-  sudo apt-get update
-  sudo apt-get install -y git
+  run_sudo apt-get update
+  run_sudo apt-get install -y git
 fi
-mkdir -p "${app_dir}"
+run_sudo mkdir -p "${app_dir}"
+run_sudo chown -R "${remote_user}:${remote_user}" "${app_dir}"
 if [ ! -d "${app_dir}/.git" ]; then
   git clone "${git_repo}" "${app_dir}"
 fi
@@ -91,6 +103,9 @@ deploy_vps_manual() {
   local app_dir="${APP_DIR:-/opt/medvision-ai}"
   local git_repo="${GIT_REPO:-}"
   local git_branch="${GIT_BRANCH:-main}"
+  local sudo_password="${SUDO_PASSWORD:-}"
+  local mlflow_bind_ip="${MLFLOW_BIND_IP:-10.8.0.1}"
+  local mlflow_host_port="${MLFLOW_HOST_PORT:-5000}"
 
   [ -n "$ssh_user" ] || die "SSH_USER is required"
   [ -n "$ssh_host" ] || die "SSH_HOST is required"
@@ -101,12 +116,20 @@ deploy_vps_manual() {
   remote_bootstrap_repo "$ssh_target" "$ssh_port" "$app_dir" "$git_repo" "$git_branch"
 
   log "Installing runtime and configuring systemd services"
-  ssh -p "$ssh_port" "$ssh_target" bash -s <<EOF
+  ssh -p "$ssh_port" "$ssh_target" "SUDO_PASSWORD=$(printf %q "$sudo_password") bash -s" <<EOF
 set -euo pipefail
 cd "${app_dir}"
 
-sudo apt-get update
-sudo apt-get install -y curl python3 python3-venv python3-pip
+run_sudo() {
+  if [ -n "\${SUDO_PASSWORD:-}" ]; then
+    printf '%s\n' "\$SUDO_PASSWORD" | sudo -S -p '' "\$@"
+  else
+    sudo "\$@"
+  fi
+}
+
+run_sudo apt-get update
+run_sudo apt-get install -y curl python3 python3-venv python3-pip
 
 if ! command -v uv >/dev/null 2>&1; then
   curl -LsSf https://astral.sh/uv/install.sh | sh
@@ -117,7 +140,7 @@ uv venv .venv
 source .venv/bin/activate
 uv pip install -r requirements.txt
 
-sudo tee /etc/systemd/system/${APP_NAME}-api.service >/dev/null <<UNIT
+run_sudo tee /etc/systemd/system/${APP_NAME}-api.service >/dev/null <<UNIT
 [Unit]
 Description=${APP_NAME} FastAPI
 After=network.target
@@ -134,7 +157,7 @@ RestartSec=5
 WantedBy=multi-user.target
 UNIT
 
-sudo tee /etc/systemd/system/${APP_NAME}-streamlit.service >/dev/null <<UNIT
+run_sudo tee /etc/systemd/system/${APP_NAME}-streamlit.service >/dev/null <<UNIT
 [Unit]
 Description=${APP_NAME} Streamlit
 After=network.target
@@ -151,10 +174,10 @@ RestartSec=5
 WantedBy=multi-user.target
 UNIT
 
-sudo systemctl daemon-reload
-sudo systemctl enable ${APP_NAME}-api ${APP_NAME}-streamlit
-sudo systemctl restart ${APP_NAME}-api ${APP_NAME}-streamlit
-sudo systemctl --no-pager status ${APP_NAME}-api ${APP_NAME}-streamlit | cat
+run_sudo systemctl daemon-reload
+run_sudo systemctl enable ${APP_NAME}-api ${APP_NAME}-streamlit
+run_sudo systemctl restart ${APP_NAME}-api ${APP_NAME}-streamlit
+run_sudo systemctl --no-pager status ${APP_NAME}-api ${APP_NAME}-streamlit | cat
 EOF
 
   log "VPS manual deployment completed"
@@ -169,29 +192,58 @@ deploy_vps_docker() {
   local app_dir="${APP_DIR:-/opt/medvision-ai}"
   local git_repo="${GIT_REPO:-}"
   local git_branch="${GIT_BRANCH:-main}"
+  local sudo_password="${SUDO_PASSWORD:-}"
+  local mlflow_bind_ip="${MLFLOW_BIND_IP:-10.8.0.1}"
+  local mlflow_host_port="${MLFLOW_HOST_PORT:-5000}"
 
   [ -n "$ssh_user" ] || die "SSH_USER is required"
   [ -n "$ssh_host" ] || die "SSH_HOST is required"
   [ -n "$git_repo" ] || die "GIT_REPO is required"
+  [ -n "$mlflow_bind_ip" ] || die "MLFLOW_BIND_IP is required"
+  [ -n "$mlflow_host_port" ] || die "MLFLOW_HOST_PORT is required"
+
+  if [ "$mlflow_bind_ip" = "0.0.0.0" ] || [ "$mlflow_bind_ip" = "127.0.0.1" ]; then
+    die "MLflow must stay VPN-only on VPS. Set MLFLOW_BIND_IP to your VPN interface IP, e.g. 10.8.0.1"
+  fi
 
   local ssh_target="${ssh_user}@${ssh_host}"
   log "Syncing repository on VPS"
   remote_bootstrap_repo "$ssh_target" "$ssh_port" "$app_dir" "$git_repo" "$git_branch"
 
   log "Installing Docker and launching services"
-  ssh -p "$ssh_port" "$ssh_target" bash -s <<EOF
+  ssh -p "$ssh_port" "$ssh_target" "SUDO_PASSWORD=$(printf %q "$sudo_password") bash -s" <<EOF
 set -euo pipefail
 cd "${app_dir}"
 
+run_sudo() {
+  if [ -n "\${SUDO_PASSWORD:-}" ]; then
+    printf '%s\n' "\$SUDO_PASSWORD" | sudo -S -p '' "\$@"
+  else
+    sudo "\$@"
+  fi
+}
+
 if ! command -v docker >/dev/null 2>&1; then
   curl -fsSL https://get.docker.com | sh
-  sudo usermod -aG docker ${ssh_user}
+  run_sudo usermod -aG docker ${ssh_user}
 fi
 
 if ! docker compose version >/dev/null 2>&1; then
   echo "docker compose plugin is required" >&2
   exit 1
 fi
+
+if command -v ss >/dev/null 2>&1; then
+  if ss -ltn "sport = :${mlflow_host_port}" | awk 'NR>1 {print}' | grep -q .; then
+    echo "[deploy][error] Host port ${mlflow_host_port} is already in use on VPS." >&2
+    echo "[deploy][error] Set MLFLOW_HOST_PORT in your OVH env file, then redeploy." >&2
+    ss -ltnp "sport = :${mlflow_host_port}" || true
+    exit 1
+  fi
+fi
+
+export MLFLOW_BIND_IP="${mlflow_bind_ip}"
+export MLFLOW_HOST_PORT="${mlflow_host_port}"
 
 docker compose -f docker-compose.yml -f docker-compose.prod.yml down || true
 docker compose -f docker-compose.yml -f docker-compose.prod.yml up --build -d

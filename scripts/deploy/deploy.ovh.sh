@@ -13,6 +13,21 @@ set -a
 source "$ENV_FILE"
 set +a
 
+if [ "${EUID:-$(id -u)}" -eq 0 ]; then
+  echo "[deploy-ovh] Warning: local sudo is not required. Run this script as your normal user." >&2
+fi
+
+if [ -z "${SUDO_PASSWORD:-}" ] && [ "${ASK_SUDO_PASSWORD:-false}" = "true" ]; then
+  if [ -t 0 ]; then
+    read -r -s -p "Remote sudo password for ${SSH_USER:-user}@${SSH_HOST:-host}: " SUDO_PASSWORD
+    echo
+    export SUDO_PASSWORD
+  else
+    echo "ASK_SUDO_PASSWORD=true but no interactive terminal available." >&2
+    exit 1
+  fi
+fi
+
 configure_caddy() {
   local ssh_user="${SSH_USER:-}"
   local ssh_host="${SSH_HOST:-}"
@@ -20,6 +35,7 @@ configure_caddy() {
   local api_domain="${API_DOMAIN:-}"
   local app_domain="${APP_DOMAIN:-}"
   local caddy_email="${CADDY_EMAIL:-}"
+  local sudo_password="${SUDO_PASSWORD:-}"
 
   if [ -z "$api_domain" ] || [ -z "$app_domain" ] || [ -z "$caddy_email" ]; then
     echo "Caddy provisioning skipped: set API_DOMAIN, APP_DOMAIN and CADDY_EMAIL in env file." >&2
@@ -33,17 +49,25 @@ configure_caddy() {
 
   local ssh_target="${ssh_user}@${ssh_host}"
 
-  ssh -p "$ssh_port" "$ssh_target" bash -s <<EOF
+  ssh -p "$ssh_port" "$ssh_target" "SUDO_PASSWORD=$(printf %q "$sudo_password") bash -s" <<EOF
 set -euo pipefail
 
-sudo apt-get update
-sudo apt-get install -y debian-keyring debian-archive-keyring apt-transport-https curl
-curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | sudo gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
-curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | sudo tee /etc/apt/sources.list.d/caddy-stable.list >/dev/null
-sudo apt-get update
-sudo apt-get install -y caddy
+run_sudo() {
+  if [ -n "\${SUDO_PASSWORD:-}" ]; then
+    printf '%s\n' "\$SUDO_PASSWORD" | sudo -S -p '' "\$@"
+  else
+    sudo "\$@"
+  fi
+}
 
-sudo tee /etc/caddy/Caddyfile >/dev/null <<CADDY
+run_sudo apt-get update
+run_sudo apt-get install -y debian-keyring debian-archive-keyring apt-transport-https curl
+curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | run_sudo gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
+curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | run_sudo tee /etc/apt/sources.list.d/caddy-stable.list >/dev/null
+run_sudo apt-get update
+run_sudo apt-get install -y caddy
+
+run_sudo tee /etc/caddy/Caddyfile >/dev/null <<CADDY
 {
   email ${caddy_email}
 }
@@ -59,18 +83,18 @@ ${app_domain} {
 }
 CADDY
 
-sudo systemctl restart caddy
-sudo systemctl enable caddy
-sudo systemctl --no-pager status caddy | cat
+run_sudo systemctl restart caddy
+run_sudo systemctl enable caddy
+run_sudo systemctl --no-pager status caddy | cat
 EOF
 }
 
 case "$MODE" in
   docker)
-    "$ROOT_DIR/scripts/deploy/deploy.sh" vps-docker
+    bash "$ROOT_DIR/scripts/deploy/deploy.sh" vps-docker
     ;;
   manual)
-    "$ROOT_DIR/scripts/deploy/deploy.sh" vps-manual
+    bash "$ROOT_DIR/scripts/deploy/deploy.sh" vps-manual
     ;;
   *)
     echo "Usage: $0 [docker|manual] [env-file]" >&2

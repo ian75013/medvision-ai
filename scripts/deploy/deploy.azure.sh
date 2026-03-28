@@ -12,4 +12,4 @@ set -a
 source "$ENV_FILE"
 set +a
 
-"$ROOT_DIR/scripts/deploy/deploy.sh" azure-containerapps
+bash "$ROOT_DIR/scripts/deploy/deploy.sh" azure-containerapps
