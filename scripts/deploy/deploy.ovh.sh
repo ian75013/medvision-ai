@@ -9,11 +9,26 @@ if [ ! -f "$ENV_FILE" ]; then
   exit 1
 fi
 
+XTRACE_WAS_ENABLED=0
+if [[ $- == *x* ]]; then
+  XTRACE_WAS_ENABLED=1
+  set +x
+fi
+
 set -a
 source "$ENV_FILE"
 set +a
 
-PROXY_PROVIDER="${PROXY_PROVIDER:-caddy}"
+PROXY_PROVIDER="${PROXY_PROVIDER:-nginx}"
+
+if [ "$XTRACE_WAS_ENABLED" -eq 1 ] && [ -n "${SUDO_PASSWORD:-}" ]; then
+  echo "Refusing to run with bash -x while SUDO_PASSWORD is set. Disable xtrace or unset SUDO_PASSWORD first." >&2
+  exit 1
+fi
+
+if [ "$XTRACE_WAS_ENABLED" -eq 1 ]; then
+  set -x
+fi
 
 if [ "${EUID:-$(id -u)}" -eq 0 ]; then
   echo "[deploy-ovh] Warning: local sudo is not required. Run this script as your normal user." >&2
@@ -53,6 +68,9 @@ configure_caddy() {
 
   local ssh_target="${ssh_user}@${ssh_host}"
 
+  if [ "$XTRACE_WAS_ENABLED" -eq 1 ]; then
+    set +x
+  fi
   ssh -p "$ssh_port" "$ssh_target" "SUDO_PASSWORD=$(printf %q "$sudo_password") bash -s" <<EOF
 set -euo pipefail
 
@@ -92,6 +110,9 @@ run_sudo systemctl enable caddy
 run_sudo systemctl reload caddy || run_sudo systemctl restart caddy
 run_sudo systemctl --no-pager status caddy | cat
 EOF
+  if [ "$XTRACE_WAS_ENABLED" -eq 1 ]; then
+    set -x
+  fi
 }
 
 configure_nginx() {
@@ -104,6 +125,12 @@ configure_nginx() {
   local api_host_port="${API_HOST_PORT:-18000}"
   local streamlit_host_port="${STREAMLIT_HOST_PORT:-18501}"
   local nginx_site_name="${NGINX_SITE_NAME:-medvision-ai}"
+  local nginx_ssl_cert="${NGINX_SSL_CERT:-}"
+  local nginx_ssl_key="${NGINX_SSL_KEY:-}"
+  local api_ssl_cert="${API_SSL_CERT:-${nginx_ssl_cert}}"
+  local api_ssl_key="${API_SSL_KEY:-${nginx_ssl_key}}"
+  local app_ssl_cert="${APP_SSL_CERT:-${nginx_ssl_cert}}"
+  local app_ssl_key="${APP_SSL_KEY:-${nginx_ssl_key}}"
 
   if [ -z "$api_domain" ] || [ -z "$app_domain" ]; then
     echo "Nginx provisioning skipped: set API_DOMAIN and APP_DOMAIN in env file." >&2
@@ -116,8 +143,44 @@ configure_nginx() {
   fi
 
   local ssh_target="${ssh_user}@${ssh_host}"
+  local tmp_local_conf
+  tmp_local_conf="$(mktemp)"
+  local tmp_remote_conf="/tmp/${nginx_site_name}.conf"
+  local nginx_template_http="$ROOT_DIR/deploy/reverse-proxy/nginx/medvision.http.template.conf"
+  local nginx_template_https="$ROOT_DIR/deploy/reverse-proxy/nginx/medvision.https.template.conf"
+  local nginx_template_selected
 
-  ssh -p "$ssh_port" "$ssh_target" "SUDO_PASSWORD=$(printf %q "$sudo_password") bash -s" <<EOF
+  if [ -n "$api_ssl_cert" ] && [ -n "$api_ssl_key" ] && [ -n "$app_ssl_cert" ] && [ -n "$app_ssl_key" ]; then
+    nginx_template_selected="$nginx_template_https"
+  else
+    nginx_template_selected="$nginx_template_http"
+    echo "[deploy-ovh] Nginx SSL cert paths not configured; installed HTTP-only vhosts for ${nginx_site_name}." >&2
+    echo "[deploy-ovh] HTTPS requests may still hit another existing 443 server block on the VPS." >&2
+  fi
+
+  [ -f "$nginx_template_selected" ] || {
+    rm -f "$tmp_local_conf"
+    echo "Missing nginx template: $nginx_template_selected" >&2
+    return 1
+  }
+
+  cp "$nginx_template_selected" "$tmp_local_conf"
+  sed -i \
+    -e "s|__API_DOMAIN__|${api_domain}|g" \
+    -e "s|__APP_DOMAIN__|${app_domain}|g" \
+    -e "s|__API_PORT__|${api_host_port}|g" \
+    -e "s|__APP_PORT__|${streamlit_host_port}|g" \
+    -e "s|__API_SSL_CERT__|${api_ssl_cert}|g" \
+    -e "s|__API_SSL_KEY__|${api_ssl_key}|g" \
+    -e "s|__APP_SSL_CERT__|${app_ssl_cert}|g" \
+    -e "s|__APP_SSL_KEY__|${app_ssl_key}|g" \
+    "$tmp_local_conf"
+
+  if [ "$XTRACE_WAS_ENABLED" -eq 1 ]; then
+    set +x
+  fi
+  scp -P "$ssh_port" "$tmp_local_conf" "${ssh_target}:${tmp_remote_conf}"
+  ssh -p "$ssh_port" "$ssh_target" "SUDO_PASSWORD=$(printf %q "$sudo_password") NGINX_SITE_NAME=$(printf %q "$nginx_site_name") TMP_REMOTE_CONF=$(printf %q "$tmp_remote_conf") bash -s" <<'EOF'
 set -euo pipefail
 
 run_sudo() {
@@ -130,41 +193,19 @@ run_sudo() {
 
 run_sudo apt-get update
 run_sudo apt-get install -y nginx
-
-run_sudo tee /etc/nginx/sites-available/${nginx_site_name}.conf >/dev/null <<NGINX
-server {
-    listen 80;
-    server_name ${api_domain};
-
-    location / {
-        proxy_pass http://127.0.0.1:${api_host_port};
-        proxy_set_header Host \$host;
-        proxy_set_header X-Real-IP \$remote_addr;
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto \$scheme;
-    }
-}
-
-server {
-    listen 80;
-    server_name ${app_domain};
-
-    location / {
-        proxy_pass http://127.0.0.1:${streamlit_host_port};
-        proxy_set_header Host \$host;
-        proxy_set_header X-Real-IP \$remote_addr;
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto \$scheme;
-    }
-}
-NGINX
-
-run_sudo ln -sf /etc/nginx/sites-available/${nginx_site_name}.conf /etc/nginx/sites-enabled/${nginx_site_name}.conf
+run_sudo install -m 644 "$TMP_REMOTE_CONF" "/etc/nginx/sites-available/${NGINX_SITE_NAME}.conf"
+run_sudo ln -sf "/etc/nginx/sites-available/${NGINX_SITE_NAME}.conf" "/etc/nginx/sites-enabled/${NGINX_SITE_NAME}.conf"
+echo "[deploy-ovh] Generated nginx site: /etc/nginx/sites-available/${NGINX_SITE_NAME}.conf" >&2
+run_sudo sed -n '1,200p' "/etc/nginx/sites-available/${NGINX_SITE_NAME}.conf" | cat
 run_sudo nginx -t
 run_sudo systemctl enable nginx
 run_sudo systemctl reload nginx || run_sudo systemctl restart nginx
 run_sudo systemctl --no-pager status nginx | cat
 EOF
+  rm -f "$tmp_local_conf"
+  if [ "$XTRACE_WAS_ENABLED" -eq 1 ]; then
+    set -x
+  fi
 }
 
 case "$MODE" in
