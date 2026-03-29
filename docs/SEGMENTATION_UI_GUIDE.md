@@ -1,126 +1,93 @@
-# Segmentation UI Guide (Streamlit)
+# Segmentation UI Guide
 
-This guide explains how to use segmentation features in the MedVision Streamlit app and how to diagnose empty or weak masks.
+This guide explains how to use the segmentation UI and related scripts in Medvision-AI. For a complete Docker workflow, see `DOCKER_WORKFLOW_GUIDE.md`.
 
-## 1. Scope
+---
 
-This document covers segmentation usage in:
+## 1. Prerequisites
 
-- streamlit_app.py (Prediction Studio)
-- multitask segmentation tracks:
-  - brain_tumor_segmentation
-  - chest_xray_segmentation
+- Docker and Docker Compose installed
+- Dataset downloaded (see `scripts/download_chest_xray_seg.sh`)
+- All scripts are executable (`find scripts/ -type f -name "*.sh" -exec chmod +x {} \;`)
 
-## 2. Quick start
+---
 
-1. Start the app:
+## 2. Data Preparation & Manifest Generation
+
+Run the following command to generate the manifest for chest X-ray segmentation:
 
 ```bash
-streamlit run streamlit_app.py
+cd /opt/medvision-ai
+API_DOMAIN=api.example.com APP_DOMAIN=app.example.com \
+docker compose run --rm --no-deps api \
+bash -lc 'python -m src.data.prepare_segmentation_dataset --config configs/chest_xray_segmentation.yaml'
 ```
 
-2. In the left panel, select a segmentation problem:
+The manifest will be generated in `data/processed/chest_xray_segmentation/manifest.csv`.
 
-- Brain Tumor Segmentation + Classification
-- Chest X-ray Segmentation + Abnormality Classification
+---
 
-3. Upload an image and select one or more available models.
+## 3. Model Training
 
-4. Use the Mask threshold slider in the sidebar to control binary mask generation.
+Train the segmentation model with:
 
-## 3. What the app shows for segmentation
+```bash
+cd /opt/medvision-ai
+API_DOMAIN=api.example.com APP_DOMAIN=app.example.com \
+docker compose run --rm --no-deps api \
+bash -lc 'python -m src.training.train_segmentation --config configs/chest_xray_segmentation.yaml'
+```
 
-For each selected model, the app displays:
+Models are saved in `artifacts/models/chest_xray_segmentation/`.
 
-- Predicted class and confidence
-- Binary mask
-- Overlay (mask blended over image)
-- Probability map (raw segmentation output before thresholding)
-- Segmentation stats table with:
-  - threshold
-  - mask_foreground_ratio
-  - prob_min
-  - prob_mean
-  - prob_max
+---
 
-## 4. Understanding the threshold
+## 4. Launching the UI (Streamlit) and API
 
-The model outputs a probability map in [0, 1].
-The binary mask is created as:
+To launch the full stack (API, Streamlit, etc.):
 
-- mask = probability_map >= threshold
+```bash
+API_DOMAIN=api.example.com APP_DOMAIN=app.example.com docker compose up
+```
 
-Interpretation:
+To launch only the API:
 
-- Higher threshold -> stricter mask (smaller regions)
-- Lower threshold -> larger mask (more permissive)
+```bash
+API_DOMAIN=api.example.com APP_DOMAIN=app.example.com docker compose up api
+```
 
-Recommended workflow:
+To launch only Streamlit:
 
-1. Start at 0.50
-2. If mask is empty, try 0.30
-3. If still empty, try 0.20
-4. If mask becomes too large/noisy, increase threshold gradually
+```bash
+API_DOMAIN=api.example.com APP_DOMAIN=app.example.com docker compose up streamlit
+```
 
-## 5. Why you may see "nothing"
+---
 
-If your binary mask is black and overlay looks unchanged, usually one of these is happening:
+## 5. Quick Manifest Validation (inside Docker)
 
-1. The threshold is too high for this image.
-2. The model predicts very low probabilities overall.
-3. The selected model is not well trained for this data distribution.
-4. Preprocessing mismatch (image type/content differs from training data).
+```bash
+cd /opt/medvision-ai
+API_DOMAIN=api.example.com APP_DOMAIN=app.example.com \
+docker compose run --rm --no-deps api \
+bash -lc 'python - <<"PY"
+import pandas as pd
+df = pd.read_csv("data/processed/chest_xray_segmentation/manifest.csv")
+print("rows", len(df))
+print("labels", df["label"].value_counts(dropna=False).to_dict())
+print("splits", df["split"].value_counts(dropna=False).to_dict())
+print(pd.crosstab(df["split"], df["label"]))
+PY'
+```
 
-Use the Probability map + prob_max to diagnose:
+---
 
-- prob_max < threshold -> binary mask will be empty
-- prob_max near 0.5 with localized bright areas -> lower threshold slightly
+## 6. Troubleshooting
 
-## 6. Reading segmentation metrics in the UI
+- If a script fails due to execution rights, make it executable with `chmod +x ...`
+- If the dataset is incomplete, rerun the download script or check the `data/raw/chest_xray_segmentation/` folder
+- For any error, check Docker logs (`docker compose logs ...`)
 
-Key values in the segmentation stats table:
+---
 
-- mask_foreground_ratio:
-  - 0.0 means no positive pixels in binary mask
-  - very high values can indicate over-segmentation
-- prob_mean:
-  - overall confidence level of segmentation branch
-- prob_max:
-  - highest predicted probability in image
-  - useful to tune threshold quickly
-
-## 7. Practical troubleshooting checklist
-
-If segmentation output is empty or poor:
-
-1. Lower threshold to 0.30 or 0.20.
-2. Check prob_max and probability map brightness.
-3. Try another image from the same dataset distribution.
-4. Compare multiple models in parallel.
-5. Validate model artifacts and metrics files exist in artifacts/.
-6. Re-run segmentation training if all models stay near-zero on valid samples.
-
-## 8. Data and model sanity checks
-
-Before concluding the UI is wrong:
-
-1. Verify segmentation model exists in artifacts/models.
-2. Verify metrics JSON exists in artifacts/reports.
-3. Verify overlays were generated during training in artifacts/overlays.
-4. Ensure selected problem is a segmentation track in registry.
-
-## 9. Best practices for demos
-
-1. Use representative images close to training distribution.
-2. Keep threshold visible in screenshots or recordings.
-3. Include probability map next to binary mask and overlay.
-4. Report mask_foreground_ratio when discussing results.
-
-## 10. Related docs
-
-- docs/FASTAPI_STREAMLIT_ALIGNMENT.md
-- docs/DATASETS.md
-- docs/MLOPS_GUIDE.md
-- docs/KNOWN_GAPS.md
-
-If segmentation behavior changes in the UI (new controls, new metrics, new output format), update this guide in the same PR.
+For a full Docker workflow and advanced usage, see `docs/DOCKER_WORKFLOW_GUIDE.md`.
