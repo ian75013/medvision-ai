@@ -1,4 +1,36 @@
 
+
+"""
+Segmentation Training Script (Medvision-AI)
+------------------------------------------------
+This script trains segmentation or multitask segmentation/classification models using TensorFlow/Keras.
+
+Key Hyperparameters (with typical defaults):
+------------------------------------------------
+- image_size: int (default: 256)
+    Size to which input images are resized.
+- batch_size: int (default: 8)
+    Number of samples per training batch.
+- epochs: int (default: 10, or dynamically set if not specified)
+    Number of training epochs. If not set, dynamically chosen to reach ~1000 steps.
+- learning_rate: float (default: 0.001)
+    Learning rate for Adam optimizer.
+- validation_split: float (default: 0.2)
+    Fraction of data used for validation.
+- seed: int (default: 42)
+    Random seed for reproducibility.
+- loss:
+    - Segmentation: binary_crossentropy
+    - Classification: binary_crossentropy (2 classes) or sparse_categorical_crossentropy (>2 classes)
+- loss_weights:
+    - segmentation_output: 1.0
+    - classification_output: 0.4
+- callbacks:
+    - EarlyStopping (monitor='val_loss', patience=3, restore_best_weights=True)
+    - ReduceLROnPlateau (monitor='val_loss', factor=0.2, patience=2)
+
+All hyperparameters can be set in the YAML config file or overridden by command-line arguments (where available).
+"""
 from __future__ import annotations
 
 import argparse
@@ -119,43 +151,25 @@ def main() -> None:
 
 
     # --- Training and evaluation logic ---
+    history = None
+    train_exception = None
     try:
-        try:
-            with mlflow.start_run(run_name=cfg.get('run_name', Path(args.config).stem)):
-                mlflow.log_params({
-                    'image_size': image_size,
-                    'batch_size': batch_size,
-                    'epochs': epochs,
-                    'learning_rate': learning_rate,
-                    'validation_split': validation_split,
-                    'task_type': task_type,
-                    'class_names': ','.join(class_names),
-                    'seed': seed,
-                    'segmentation_loss_weight': float(cfg.get('segmentation_loss_weight', 1.0)),
-                    'classification_loss_weight': float(cfg.get('classification_loss_weight', 0.4)),
-                    'model_dir': str(model_dir),
-                    'reports_dir': str(reports_dir),
-                    'overlays_dir': str(overlays_dir),
-                })
-                steps_per_epoch = int(np.ceil(train_size / batch_size))
-                val_steps = None
-                if hasattr(val_ds, '__len__'):
-                    try:
-                        val_steps = int(np.ceil(len(val_ds) / batch_size))
-                    except Exception:
-                        val_steps = None
-                history = model.fit(
-                    train_ds,
-                    validation_data=val_ds,
-                    epochs=epochs,
-                    callbacks=callbacks,
-                    verbose=1,
-                    steps_per_epoch=steps_per_epoch,
-                    validation_steps=val_steps,
-                )
-        except Exception as mlflow_exc:
-            print(f"[WARNING] MLflow logging failed: {mlflow_exc}\nContinuing with local model saving.")
-            # Fallback: run training without MLflow
+        with mlflow.start_run(run_name=cfg.get('run_name', Path(args.config).stem)):
+            mlflow.log_params({
+                'image_size': image_size,
+                'batch_size': batch_size,
+                'epochs': epochs,
+                'learning_rate': learning_rate,
+                'validation_split': validation_split,
+                'task_type': task_type,
+                'class_names': ','.join(class_names),
+                'seed': seed,
+                'segmentation_loss_weight': float(cfg.get('segmentation_loss_weight', 1.0)),
+                'classification_loss_weight': float(cfg.get('classification_loss_weight', 0.4)),
+                'model_dir': str(model_dir),
+                'reports_dir': str(reports_dir),
+                'overlays_dir': str(overlays_dir),
+            })
             steps_per_epoch = int(np.ceil(train_size / batch_size))
             val_steps = None
             if hasattr(val_ds, '__len__'):
@@ -176,7 +190,36 @@ def main() -> None:
         import traceback
         print("[FATAL] Training crashed with exception:")
         traceback.print_exc()
-        raise train_exc
+        train_exception = train_exc
+    finally:
+        # Always attempt to log artifacts/metrics to MLflow, even if training failed or was interrupted
+        try:
+            prefix = cfg.get('artifact_prefix', Path(args.config).stem)
+            model_path = model_dir / f'{prefix}.keras'
+            metrics_path = reports_dir / f'{prefix}_metrics.json'
+            history_path = reports_dir / f'{prefix}_history.json'
+            overlay_path = overlays_dir / f'{prefix}_sample_overlay.png'
+
+            # Save model and metrics locally (if not already saved)
+            if model and not model_path.exists():
+                model.save(model_path)
+            # Save metrics and history if available
+            if history is not None:
+                history_payload = {'epoch': list(range(1, len(history.history['loss']) + 1))}
+                history_payload.update({k: [float(v) for v in vals] for k, vals in history.history.items()})
+                history_path.write_text(json.dumps(history_payload, indent=2), encoding='utf-8')
+            # Try MLflow artifact logging
+            mlflow.log_artifact(str(model_path))
+            if metrics_path.exists():
+                mlflow.log_artifact(str(metrics_path))
+            if history_path.exists():
+                mlflow.log_artifact(str(history_path))
+            if overlay_path.exists():
+                mlflow.log_artifact(str(overlay_path))
+        except Exception as mlflow_artifact_exc:
+            print(f"[WARNING] MLflow artifact logging failed in finally block: {mlflow_artifact_exc}\nArtifacts saved locally.")
+        if train_exception:
+            raise train_exception
 
     all_true_masks: list[np.ndarray] = []
     all_pred_masks: list[np.ndarray] = []
