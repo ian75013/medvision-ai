@@ -18,6 +18,7 @@ done
 
 # --- Kaggle credentials ---
 KAGGLE_MOUNT_FLAG=""
+KAGGLE_SETUP_CMD=":"
 if [[ -z "${KAGGLE_USERNAME:-}" || -z "${KAGGLE_KEY:-}" ]]; then
     KAGGLE_JSON="${HOME}/.kaggle/kaggle.json"
     if [[ ! -f "$KAGGLE_JSON" ]]; then
@@ -26,26 +27,32 @@ if [[ -z "${KAGGLE_USERNAME:-}" || -z "${KAGGLE_KEY:-}" ]]; then
         echo "  or create ~/.kaggle/kaggle.json."
         exit 1
     fi
-    KAGGLE_MOUNT_FLAG="-v ${KAGGLE_JSON}:/root/.kaggle/kaggle.json:ro"
+    KAGGLE_MOUNT_FLAG="-v ${KAGGLE_JSON}:/tmp/kaggle.json:ro"
+    KAGGLE_SETUP_CMD="mkdir -p /root/.kaggle && cp /tmp/kaggle.json /root/.kaggle/kaggle.json && chmod 600 /root/.kaggle/kaggle.json"
 fi
 
-# --- Run downloads inside the api container ---
-docker compose run --rm \
-    ${KAGGLE_MOUNT_FLAG} \
-    api bash -lc "
-        set -e
-        echo '==> [1/4] Chest X-ray classification dataset'
-        python -m src.data.download_dataset ${FORCE}
+# Isolate each job in its own container to reduce peak memory and avoid OOM kills.
+run_download_step() {
+    local label="$1"
+    local cmd="$2"
+    echo "==> ${label}"
+    API_DOMAIN="${API_DOMAIN:-api.example.com}" APP_DOMAIN="${APP_DOMAIN:-app.example.com}" \
+        docker compose run --rm --no-deps \
+        ${KAGGLE_MOUNT_FLAG} \
+        api bash -lc "set -e; ${KAGGLE_SETUP_CMD}; ${cmd}"
+}
 
-        echo '==> [2/4] Brain MRI classification dataset'
-        python -m src.data.download_brain_mri_dataset --config configs/brain_tumor_mri.yaml ${FORCE}
+run_download_step "[1/4] Chest X-ray classification dataset" \
+    "python -m src.data.download_dataset ${FORCE}"
 
-        echo '==> [3/4] Brain tumor segmentation dataset'
-        python -m src.data.download_segmentation_dataset --problem brain_tumor_seg ${FORCE}
+run_download_step "[2/4] Brain MRI classification dataset" \
+    "python -m src.data.download_brain_mri_dataset --config configs/brain_tumor_mri.yaml ${FORCE}"
 
-        echo '==> [4/4] Chest X-ray segmentation dataset'
-        python -m src.data.download_segmentation_dataset --problem chest_xray_seg ${FORCE}
+run_download_step "[3/4] Brain tumor segmentation dataset" \
+    "python -m src.data.download_segmentation_dataset --problem brain_tumor_seg ${FORCE}"
 
-        echo ''
-        echo 'All datasets available in data/raw/.'
-    "
+run_download_step "[4/4] Chest X-ray segmentation dataset" \
+    "python -m src.data.download_segmentation_dataset --problem chest_xray_seg ${FORCE}"
+
+echo ""
+echo "All datasets available in data/raw/."
