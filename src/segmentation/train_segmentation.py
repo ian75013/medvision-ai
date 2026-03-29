@@ -109,103 +109,118 @@ def main() -> None:
     mlflow.set_tracking_uri(cfg.get('mlflow_tracking_uri', 'file:./mlruns'))
     mlflow.set_experiment(cfg.get('project_name', 'medvision-segmentation'))
 
-    with mlflow.start_run(run_name=cfg.get('run_name', Path(args.config).stem)):
-        mlflow.log_params({
-            'image_size': image_size,
-            'batch_size': batch_size,
-            'epochs': epochs,
-            'learning_rate': learning_rate,
-            'task_type': task_type,
-            'class_names': ','.join(class_names),
-        })
+
+    # --- Training and evaluation logic ---
+    try:
+        with mlflow.start_run(run_name=cfg.get('run_name', Path(args.config).stem)):
+            mlflow.log_params({
+                'image_size': image_size,
+                'batch_size': batch_size,
+                'epochs': epochs,
+                'learning_rate': learning_rate,
+                'task_type': task_type,
+                'class_names': ','.join(class_names),
+            })
+            history = model.fit(train_ds, validation_data=val_ds, epochs=epochs, callbacks=callbacks, verbose=1)
+    except Exception as mlflow_exc:
+        print(f"[WARNING] MLflow logging failed: {mlflow_exc}\nContinuing with local model saving.")
+        # Fallback: run training without MLflow
         history = model.fit(train_ds, validation_data=val_ds, epochs=epochs, callbacks=callbacks, verbose=1)
 
-        all_true_masks: list[np.ndarray] = []
-        all_pred_masks: list[np.ndarray] = []
-        all_class_true: list[int] = []
-        all_class_pred: list[int] = []
+    all_true_masks: list[np.ndarray] = []
+    all_pred_masks: list[np.ndarray] = []
+    all_class_true: list[int] = []
+    all_class_pred: list[int] = []
 
-        sample_image = None
-        sample_mask = None
+    sample_image = None
+    sample_mask = None
 
-        for batch in test_ds:
-            if task_type == 'multitask':
-                batch_x, batch_y = batch
-                true_masks = batch_y['segmentation_output'].numpy()
-                class_true = batch_y['classification_output'].numpy()
-                preds = model.predict(batch_x, verbose=0)
-                pred_masks = preds['segmentation_output']
-                class_preds_raw = preds['classification_output']
-                if class_preds_raw.ndim == 1 or class_preds_raw.shape[-1] == 1:
-                    class_preds = (class_preds_raw.reshape(-1) >= 0.5).astype(int)
-                else:
-                    class_preds = np.argmax(class_preds_raw, axis=1)
-                all_class_true.extend(class_true.astype(int).tolist())
-                all_class_pred.extend(class_preds.astype(int).tolist())
+    for batch in test_ds:
+        if task_type == 'multitask':
+            batch_x, batch_y = batch
+            true_masks = batch_y['segmentation_output'].numpy()
+            class_true = batch_y['classification_output'].numpy()
+            preds = model.predict(batch_x, verbose=0)
+            pred_masks = preds['segmentation_output']
+            class_preds_raw = preds['classification_output']
+            if class_preds_raw.ndim == 1 or class_preds_raw.shape[-1] == 1:
+                class_preds = (class_preds_raw.reshape(-1) >= 0.5).astype(int)
             else:
-                batch_x, true_masks = batch
-                pred_masks = model.predict(batch_x, verbose=0)
+                class_preds = np.argmax(class_preds_raw, axis=1)
+            all_class_true.extend(class_true.astype(int).tolist())
+            all_class_pred.extend(class_preds.astype(int).tolist())
+        else:
+            batch_x, true_masks = batch
+            pred_masks = model.predict(batch_x, verbose=0)
 
-            pred_bin = (pred_masks >= 0.5).astype(np.float32)
-            all_true_masks.append(true_masks.astype(np.float32))
-            all_pred_masks.append(pred_bin.astype(np.float32))
+        pred_bin = (pred_masks >= 0.5).astype(np.float32)
+        all_true_masks.append(true_masks.astype(np.float32))
+        all_pred_masks.append(pred_bin.astype(np.float32))
 
-            if sample_image is None:
-                sample_image = batch_x[0].numpy()
-                sample_mask = pred_bin[0, ..., 0]
+        if sample_image is None:
+            sample_image = batch_x[0].numpy()
+            sample_mask = pred_bin[0, ..., 0]
 
-        true_masks_arr = np.concatenate(all_true_masks, axis=0)
-        pred_masks_arr = np.concatenate(all_pred_masks, axis=0)
+    true_masks_arr = np.concatenate(all_true_masks, axis=0)
+    pred_masks_arr = np.concatenate(all_pred_masks, axis=0)
 
-        metrics = {
-            'dice': dice_coefficient_np(true_masks_arr, pred_masks_arr),
-            'iou': iou_np(true_masks_arr, pred_masks_arr),
-            'pixel_accuracy': pixel_accuracy_np(true_masks_arr, pred_masks_arr),
-        }
-        true_mask_flat = (true_masks_arr > 0.5).reshape(-1).astype(int)
-        pred_mask_flat = (pred_masks_arr > 0.5).reshape(-1).astype(int)
-        metrics['mask_precision'] = float(precision_score(true_mask_flat, pred_mask_flat, zero_division=0))
-        metrics['mask_recall'] = float(recall_score(true_mask_flat, pred_mask_flat, zero_division=0))
-        metrics['mask_f1'] = float(f1_score(true_mask_flat, pred_mask_flat, zero_division=0))
-        if all_class_true:
-            class_true_arr = np.array(all_class_true)
-            class_pred_arr = np.array(all_class_pred)
-            metrics['classification_accuracy'] = float(np.mean(class_pred_arr == class_true_arr))
-            avg_type = 'binary' if len(class_names) <= 2 else 'macro'
-            metrics['classification_precision'] = float(
-                precision_score(class_true_arr, class_pred_arr, average=avg_type, zero_division=0)
-            )
-            metrics['classification_recall'] = float(
-                recall_score(class_true_arr, class_pred_arr, average=avg_type, zero_division=0)
-            )
-            metrics['classification_f1'] = float(
-                f1_score(class_true_arr, class_pred_arr, average=avg_type, zero_division=0)
-            )
+    metrics = {
+        'dice': dice_coefficient_np(true_masks_arr, pred_masks_arr),
+        'iou': iou_np(true_masks_arr, pred_masks_arr),
+        'pixel_accuracy': pixel_accuracy_np(true_masks_arr, pred_masks_arr),
+    }
+    true_mask_flat = (true_masks_arr > 0.5).reshape(-1).astype(int)
+    pred_mask_flat = (pred_masks_arr > 0.5).reshape(-1).astype(int)
+    metrics['mask_precision'] = float(precision_score(true_mask_flat, pred_mask_flat, zero_division=0))
+    metrics['mask_recall'] = float(recall_score(true_mask_flat, pred_mask_flat, zero_division=0))
+    metrics['mask_f1'] = float(f1_score(true_mask_flat, pred_mask_flat, zero_division=0))
+    if all_class_true:
+        class_true_arr = np.array(all_class_true)
+        class_pred_arr = np.array(all_class_pred)
+        metrics['classification_accuracy'] = float(np.mean(class_pred_arr == class_true_arr))
+        avg_type = 'binary' if len(class_names) <= 2 else 'macro'
+        metrics['classification_precision'] = float(
+            precision_score(class_true_arr, class_pred_arr, average=avg_type, zero_division=0)
+        )
+        metrics['classification_recall'] = float(
+            recall_score(class_true_arr, class_pred_arr, average=avg_type, zero_division=0)
+        )
+        metrics['classification_f1'] = float(
+            f1_score(class_true_arr, class_pred_arr, average=avg_type, zero_division=0)
+        )
 
-        prefix = cfg.get('artifact_prefix', Path(args.config).stem)
-        model_path = model_dir / f'{prefix}.keras'
-        metrics_path = reports_dir / f'{prefix}_metrics.json'
-        history_path = reports_dir / f'{prefix}_history.json'
-        overlay_path = overlays_dir / f'{prefix}_sample_overlay.png'
+    prefix = cfg.get('artifact_prefix', Path(args.config).stem)
+    model_path = model_dir / f'{prefix}.keras'
+    metrics_path = reports_dir / f'{prefix}_metrics.json'
+    history_path = reports_dir / f'{prefix}_history.json'
+    overlay_path = overlays_dir / f'{prefix}_sample_overlay.png'
 
-        model.save(model_path)
-        save_metrics(metrics, metrics_path)
-        history_payload = {'epoch': list(range(1, len(history.history['loss']) + 1))}
-        history_payload.update({k: [float(v) for v in vals] for k, vals in history.history.items()})
-        history_path.write_text(json.dumps(history_payload, indent=2), encoding='utf-8')
+    # --- Always save model and metrics locally ---
+    model.save(model_path)
+    save_metrics(metrics, metrics_path)
+    history_payload = {'epoch': list(range(1, len(history.history['loss']) + 1))}
+    history_payload.update({k: [float(v) for v in vals] for k, vals in history.history.items()})
+    history_path.write_text(json.dumps(history_payload, indent=2), encoding='utf-8')
 
-        if sample_image is not None and sample_mask is not None:
-            save_overlay(sample_image, sample_mask, overlay_path)
+    if sample_image is not None and sample_mask is not None:
+        save_overlay(sample_image, sample_mask, overlay_path)
 
-        mlflow.log_artifact(str(model_path))
-        mlflow.log_artifact(str(metrics_path))
-        mlflow.log_artifact(str(history_path))
-        if overlay_path.exists():
-            mlflow.log_artifact(str(overlay_path))
-        for k, v in metrics.items():
-            mlflow.log_metric(k, float(v))
-        _log_history_metrics(history.history)
-        print(json.dumps(metrics, indent=2))
+    # --- Try MLflow artifact logging, but do not fail if it errors ---
+    try:
+        with mlflow.start_run(run_name=cfg.get('run_name', Path(args.config).stem), nested=True):
+            mlflow.log_artifact(str(model_path))
+            mlflow.log_artifact(str(metrics_path))
+            mlflow.log_artifact(str(history_path))
+            if overlay_path.exists():
+                mlflow.log_artifact(str(overlay_path))
+            for k, v in metrics.items():
+                mlflow.log_metric(k, float(v))
+            if 'history' in locals():
+                _log_history_metrics(history.history)
+    except Exception as mlflow_artifact_exc:
+        print(f"[WARNING] MLflow artifact logging failed: {mlflow_artifact_exc}\nArtifacts saved locally.")
+
+    print(json.dumps(metrics, indent=2))
 
 
 if __name__ == '__main__':
