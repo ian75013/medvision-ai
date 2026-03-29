@@ -53,7 +53,7 @@ def _make_dataset(df: pd.DataFrame, image_size: int, batch_size: int, class_to_i
             tf.TensorSpec(shape=(image_size, image_size, 1), dtype=tf.float32),
         )
     ds = tf.data.Dataset.from_generator(gen, output_signature=output_signature)
-    return ds.batch(batch_size).prefetch(AUTOTUNE)
+    return ds.repeat().batch(batch_size).prefetch(AUTOTUNE)
 
 
 def build_segmentation_datasets(manifest_path: str | Path, image_size: int, batch_size: int, validation_split: float = 0.2, seed: int = 42, task_type: str = 'multitask'):
@@ -83,9 +83,12 @@ def build_segmentation_datasets(manifest_path: str | Path, image_size: int, batc
         train_df, test_df = train_test_split(train_df, test_size=max(validation_split, 0.15), random_state=seed, stratify=train_df['label'])
     train_df, val_df = train_test_split(train_df, test_size=validation_split, random_state=seed, stratify=train_df['label'])
 
+    train_size = len(train_df)
+
     return (
         _make_dataset(train_df, image_size, batch_size, class_to_idx, task_type),
         _make_dataset(val_df, image_size, batch_size, class_to_idx, task_type),
         _make_dataset(test_df, image_size, batch_size, class_to_idx, task_type),
         labels,
+        train_size,
     )

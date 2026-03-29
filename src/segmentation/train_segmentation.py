@@ -71,7 +71,7 @@ def main() -> None:
     validation_split = float(cfg.get('validation_split', 0.2))
     task_type = cfg.get('task_type', 'multitask')
 
-    train_ds, val_ds, test_ds, class_names = build_segmentation_datasets(
+    train_ds, val_ds, test_ds, class_names, train_size = build_segmentation_datasets(
         manifest_path=cfg['manifest_path'],
         image_size=image_size,
         batch_size=batch_size,
@@ -79,6 +79,13 @@ def main() -> None:
         seed=seed,
         task_type=task_type,
     )
+
+    # Dynamically adapt epochs if not set by user
+    if args.epochs is None and 'epochs' not in cfg:
+        target_steps = 1000  # You can adjust this target as needed
+        steps_per_epoch = int(np.ceil(train_size / batch_size))
+        epochs = int(np.ceil(target_steps / steps_per_epoch))
+        print(f"[INFO] Dynamically setting epochs to {epochs} to reach at least {target_steps} steps (train_size={train_size}, batch_size={batch_size})")
 
     if task_type == 'multitask':
         model = build_multitask_unet(image_size=image_size, num_classes=max(2, len(class_names)))
