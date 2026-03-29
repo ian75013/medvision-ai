@@ -120,22 +120,42 @@ def main() -> None:
 
     # --- Training and evaluation logic ---
     try:
-        with mlflow.start_run(run_name=cfg.get('run_name', Path(args.config).stem)):
-            mlflow.log_params({
-                'image_size': image_size,
-                'batch_size': batch_size,
-                'epochs': epochs,
-                'learning_rate': learning_rate,
-                'validation_split': validation_split,
-                'task_type': task_type,
-                'class_names': ','.join(class_names),
-                'seed': seed,
-                'segmentation_loss_weight': float(cfg.get('segmentation_loss_weight', 1.0)),
-                'classification_loss_weight': float(cfg.get('classification_loss_weight', 0.4)),
-                'model_dir': str(model_dir),
-                'reports_dir': str(reports_dir),
-                'overlays_dir': str(overlays_dir),
-            })
+        try:
+            with mlflow.start_run(run_name=cfg.get('run_name', Path(args.config).stem)):
+                mlflow.log_params({
+                    'image_size': image_size,
+                    'batch_size': batch_size,
+                    'epochs': epochs,
+                    'learning_rate': learning_rate,
+                    'validation_split': validation_split,
+                    'task_type': task_type,
+                    'class_names': ','.join(class_names),
+                    'seed': seed,
+                    'segmentation_loss_weight': float(cfg.get('segmentation_loss_weight', 1.0)),
+                    'classification_loss_weight': float(cfg.get('classification_loss_weight', 0.4)),
+                    'model_dir': str(model_dir),
+                    'reports_dir': str(reports_dir),
+                    'overlays_dir': str(overlays_dir),
+                })
+                steps_per_epoch = int(np.ceil(train_size / batch_size))
+                val_steps = None
+                if hasattr(val_ds, '__len__'):
+                    try:
+                        val_steps = int(np.ceil(len(val_ds) / batch_size))
+                    except Exception:
+                        val_steps = None
+                history = model.fit(
+                    train_ds,
+                    validation_data=val_ds,
+                    epochs=epochs,
+                    callbacks=callbacks,
+                    verbose=1,
+                    steps_per_epoch=steps_per_epoch,
+                    validation_steps=val_steps,
+                )
+        except Exception as mlflow_exc:
+            print(f"[WARNING] MLflow logging failed: {mlflow_exc}\nContinuing with local model saving.")
+            # Fallback: run training without MLflow
             steps_per_epoch = int(np.ceil(train_size / batch_size))
             val_steps = None
             if hasattr(val_ds, '__len__'):
@@ -152,25 +172,11 @@ def main() -> None:
                 steps_per_epoch=steps_per_epoch,
                 validation_steps=val_steps,
             )
-    except Exception as mlflow_exc:
-        print(f"[WARNING] MLflow logging failed: {mlflow_exc}\nContinuing with local model saving.")
-        # Fallback: run training without MLflow
-        steps_per_epoch = int(np.ceil(train_size / batch_size))
-        val_steps = None
-        if hasattr(val_ds, '__len__'):
-            try:
-                val_steps = int(np.ceil(len(val_ds) / batch_size))
-            except Exception:
-                val_steps = None
-        history = model.fit(
-            train_ds,
-            validation_data=val_ds,
-            epochs=epochs,
-            callbacks=callbacks,
-            verbose=1,
-            steps_per_epoch=steps_per_epoch,
-            validation_steps=val_steps,
-        )
+    except Exception as train_exc:
+        import traceback
+        print("[FATAL] Training crashed with exception:")
+        traceback.print_exc()
+        raise train_exc
 
     all_true_masks: list[np.ndarray] = []
     all_pred_masks: list[np.ndarray] = []
