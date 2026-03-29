@@ -42,17 +42,23 @@ run_download_step() {
         api bash -lc "set -e; ${KAGGLE_SETUP_CMD}; ${cmd}"
 }
 
-run_download_step "[1/4] Chest X-ray classification dataset" \
+run_download_step "[1/6] Chest X-ray classification dataset" \
     "python -m src.data.download_dataset ${FORCE}"
 
-run_download_step "[2/4] Brain MRI classification dataset" \
+run_download_step "[2/6] Brain MRI classification dataset" \
     "python -m src.data.download_brain_mri_dataset --config configs/brain_tumor_mri.yaml ${FORCE}"
 
-run_download_step "[3/4] Brain tumor segmentation dataset" \
+run_download_step "[3/6] Brain tumor segmentation dataset" \
     "python -m src.data.download_segmentation_dataset --problem brain_tumor_seg ${FORCE}"
 
-run_download_step "[4/4] Chest X-ray segmentation dataset" \
+run_download_step "[4/6] Chest X-ray segmentation dataset" \
     "python -m src.data.download_segmentation_dataset --problem chest_xray_seg ${FORCE}"
 
+run_download_step "[5/6] Prepare brain tumor segmentation manifest" \
+    "python -m src.data.prepare_segmentation_dataset --config configs/brain_tumor_segmentation.yaml"
+
+run_download_step "[6/6] Prepare chest X-ray segmentation manifest" \
+    "python -m src.data.prepare_segmentation_dataset --config configs/chest_xray_segmentation.yaml"
+
 echo ""
-echo "All datasets available in data/raw/."
+echo "All datasets available in data/raw/ and manifests in data/processed/."
