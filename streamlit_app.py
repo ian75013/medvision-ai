@@ -571,9 +571,15 @@ with tab_predict:
         st.warning("No trained models found for this problem in artifacts/models.")
     else:
         selected_models = st.multiselect("Select models", options=available_models, default=available_models)
-        input_mode = st.radio("Image source", options=["Upload image", "Dataset image database"], horizontal=True)
+        input_mode = st.radio(
+            "Image source",
+            options=["Upload image", "Dataset image database"],
+            index=1,
+            horizontal=True,
+        )
         selected_image_path: Path | None = None
         uploaded = None
+        sample_state_key = f"prediction_selected_sample_{problem}"
 
         if input_mode == "Upload image":
             uploaded = st.file_uploader("Upload an image", type=["png", "jpg", "jpeg", "bmp", "webp"])
@@ -602,6 +608,11 @@ with tab_predict:
                 if not filtered_samples:
                     st.warning("No image matches these filters.")
                 else:
+                    current_sample_id = st.session_state.get(sample_state_key)
+                    if current_sample_id not in {str(s["sample_id"]) for s in filtered_samples}:
+                        current_sample_id = str(filtered_samples[0]["sample_id"])
+                        st.session_state[sample_state_key] = current_sample_id
+
                     recs = _recommended_samples(filtered_samples, max_items=4)
                     if recs:
                         st.markdown("#### Recommended samples")
@@ -611,6 +622,13 @@ with tab_predict:
                                 preview = _load_preview_image(Path(sample["path"]))
                                 if preview is not None:
                                     st.image(preview, caption=sample["label"], use_container_width=True)
+                                if st.button(
+                                    "Select",
+                                    key=f"rec_select_{problem}_{sample['sample_id']}",
+                                    use_container_width=True,
+                                ):
+                                    st.session_state[sample_state_key] = str(sample["sample_id"])
+                                    current_sample_id = str(sample["sample_id"])
 
                     page_size = st.select_slider("Samples per page", options=[6, 12, 18, 24], value=12)
                     total_pages = max(1, (len(filtered_samples) + page_size - 1) // page_size)
@@ -619,12 +637,19 @@ with tab_predict:
                     page_samples = filtered_samples[page_start : page_start + page_size]
 
                     st.caption(f"Showing {len(page_samples)} / {len(filtered_samples)} filtered samples.")
+                    default_index = 0
+                    for idx, sample in enumerate(filtered_samples):
+                        if str(sample["sample_id"]) == str(current_sample_id):
+                            default_index = idx
+                            break
                     selected_index = st.selectbox(
                         "Choose a dataset image",
-                        options=list(range(len(page_samples))),
-                        format_func=lambda idx: page_samples[idx]["display"],
+                        options=list(range(len(filtered_samples))),
+                        index=default_index,
+                        format_func=lambda idx: filtered_samples[idx]["display"],
                     )
-                    selected_sample = page_samples[selected_index]
+                    selected_sample = filtered_samples[selected_index]
+                    st.session_state[sample_state_key] = str(selected_sample["sample_id"])
                     selected_image_path = Path(selected_sample["path"])
 
                     preview_cols = st.columns(3)
@@ -633,6 +658,12 @@ with tab_predict:
                             preview = _load_preview_image(Path(sample["path"]))
                             if preview is not None:
                                 st.image(preview, caption=sample["label"], use_container_width=True)
+                            if st.button(
+                                "Select",
+                                key=f"page_select_{problem}_{sample['sample_id']}",
+                                use_container_width=True,
+                            ):
+                                st.session_state[sample_state_key] = str(sample["sample_id"])
 
         if uploaded is not None or selected_image_path is not None:
             left_col, right_col = st.columns([1.1, 1.4])
