@@ -424,6 +424,36 @@ docker compose down
 
 Good for a full local demo. For debugging, running services one by one is often easier.
 
+### Training from Docker
+
+Build training image once:
+
+```bash
+docker compose build api
+```
+
+Run training jobs in one-shot containers:
+
+```bash
+# Chest X-ray classification
+docker compose run --rm api bash -lc "python -m src.training.train --config configs/config.yaml --model optimized"
+
+# Brain MRI classification
+docker compose run --rm api bash -lc "python -m src.training.train_brain_mri --config configs/brain_tumor_mri.yaml --model optimized"
+
+# Brain tumor segmentation
+docker compose run --rm api bash -lc "python -m src.segmentation.train_segmentation --config configs/brain_tumor_segmentation.yaml"
+
+# Chest X-ray segmentation
+docker compose run --rm api bash -lc "python -m src.segmentation.train_segmentation --config configs/chest_xray_segmentation.yaml"
+```
+
+Optionally keep MLflow UI running while training:
+
+```bash
+docker compose up -d mlflow
+```
+
 ## 13. Helper scripts
 
 Available scripts:
@@ -431,6 +461,10 @@ Available scripts:
 - scripts/run_api.sh
 - scripts/run_streamlit.sh
 - scripts/run_training.sh
+- scripts/run_training_docker.sh
+- scripts/run_training_brain_mri_docker.sh
+- scripts/run_training_segmentation_brain_docker.sh
+- scripts/run_training_segmentation_chest_docker.sh
 - scripts/download_dataset.ps1
 - scripts/download_dataset.bat
 
