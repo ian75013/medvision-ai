@@ -179,6 +179,9 @@ configure_nginx() {
   local tmp_local_apache_conf
   tmp_local_apache_conf="$(mktemp)"
   local tmp_remote_apache_conf="/tmp/medvision-apache-site.conf"
+  local tmp_local_apache_redirect_conf
+  tmp_local_apache_redirect_conf="$(mktemp)"
+  local tmp_remote_apache_redirect_conf="/tmp/medvision-apache-site-redirect.conf"
   cat > "$tmp_local_apache_conf" <<EOF
 <VirtualHost *:80>
   ServerName ${api_domain}
@@ -200,6 +203,18 @@ configure_nginx() {
   ProxyPass / http://127.0.0.1:${streamlit_host_port}/ retry=0 timeout=3600
   ProxyPassReverse / http://127.0.0.1:${streamlit_host_port}/
   RequestHeader set X-Forwarded-Proto "http"
+</VirtualHost>
+EOF
+
+  cat > "$tmp_local_apache_redirect_conf" <<EOF
+<VirtualHost *:80>
+  ServerName ${api_domain}
+  Redirect permanent / https://${api_domain}/
+</VirtualHost>
+
+<VirtualHost *:80>
+  ServerName ${app_domain}
+  Redirect permanent / https://${app_domain}/
 </VirtualHost>
 EOF
 
@@ -326,6 +341,7 @@ if [ "${AUTO_CERTBOT_ONCE:-true}" = "true" ]; then
 fi
 
 if [ "$api_cert_ok" = "true" ] && [ "$app_cert_ok" = "true" ]; then
+  run_sudo install -m 644 "$TMP_REMOTE_APACHE_REDIRECT_CONF" /etc/apache2/sites-available/medvision-ai.conf
   api_cert_resolved="${api_pair%%|*}"
   api_key_resolved="${api_pair##*|}"
   app_cert_resolved="${app_pair%%|*}"
@@ -373,19 +389,23 @@ EOF_SSL
   run_sudo systemctl reload apache2
   echo "[deploy-ovh] Apache SSL site enabled for MedVision domains." >&2
 else
+  run_sudo install -m 644 "$TMP_REMOTE_APACHE_CONF" /etc/apache2/sites-available/medvision-ai.conf
   run_sudo a2dissite medvision-ai-ssl >/dev/null 2>&1 || true
+  run_sudo apache2ctl configtest
+  run_sudo systemctl reload apache2
   echo "[deploy-ovh] Apache SSL site skipped: certificates are not available yet." >&2
 fi
 SCRIPT_EOF
 
-  chmod +x "$tmp_local_apache_conf" "$tmp_local_apache_script"
+  chmod +x "$tmp_local_apache_conf" "$tmp_local_apache_redirect_conf" "$tmp_local_apache_script"
   scp -P "$ssh_port" "$tmp_local_apache_conf" "${ssh_target}:${tmp_remote_apache_conf}"
+  scp -P "$ssh_port" "$tmp_local_apache_redirect_conf" "${ssh_target}:${tmp_remote_apache_redirect_conf}"
   scp -P "$ssh_port" "$tmp_local_apache_script" "${ssh_target}:${tmp_remote_apache_script}"
   ssh "${ssh_tty_args[@]}" -p "$ssh_port" "$ssh_target" \
-    "SUDO_PASSWORD=$(printf %q "$sudo_password") USE_REMOTE_SUDO_PROMPT=$(printf %q "${USE_REMOTE_SUDO_PROMPT:-false}") TMP_REMOTE_APACHE_CONF=$(printf %q "$tmp_remote_apache_conf") API_DOMAIN=$(printf %q "$api_domain") APP_DOMAIN=$(printf %q "$app_domain") API_HOST_PORT=$(printf %q "$api_host_port") STREAMLIT_HOST_PORT=$(printf %q "$streamlit_host_port") APACHE_API_SSL_CERT=$(printf %q "$apache_api_ssl_cert") APACHE_API_SSL_KEY=$(printf %q "$apache_api_ssl_key") APACHE_APP_SSL_CERT=$(printf %q "$apache_app_ssl_cert") APACHE_APP_SSL_KEY=$(printf %q "$apache_app_ssl_key") APACHE_SSL_FALLBACK_DOMAIN=$(printf %q "$apache_ssl_fallback_domain") LETSENCRYPT_EMAIL=$(printf %q "$letsencrypt_email") AUTO_CERTBOT_ONCE=$(printf %q "$auto_certbot_once") bash ${tmp_remote_apache_script}"
+    "SUDO_PASSWORD=$(printf %q "$sudo_password") USE_REMOTE_SUDO_PROMPT=$(printf %q "${USE_REMOTE_SUDO_PROMPT:-false}") TMP_REMOTE_APACHE_CONF=$(printf %q "$tmp_remote_apache_conf") TMP_REMOTE_APACHE_REDIRECT_CONF=$(printf %q "$tmp_remote_apache_redirect_conf") API_DOMAIN=$(printf %q "$api_domain") APP_DOMAIN=$(printf %q "$app_domain") API_HOST_PORT=$(printf %q "$api_host_port") STREAMLIT_HOST_PORT=$(printf %q "$streamlit_host_port") APACHE_API_SSL_CERT=$(printf %q "$apache_api_ssl_cert") APACHE_API_SSL_KEY=$(printf %q "$apache_api_ssl_key") APACHE_APP_SSL_CERT=$(printf %q "$apache_app_ssl_cert") APACHE_APP_SSL_KEY=$(printf %q "$apache_app_ssl_key") APACHE_SSL_FALLBACK_DOMAIN=$(printf %q "$apache_ssl_fallback_domain") LETSENCRYPT_EMAIL=$(printf %q "$letsencrypt_email") AUTO_CERTBOT_ONCE=$(printf %q "$auto_certbot_once") bash ${tmp_remote_apache_script}"
   echo "[deploy-ovh] Apache reverse proxy configured." >&2
 
-  rm -f "$tmp_local_apache_conf" "$tmp_local_apache_script"
+  rm -f "$tmp_local_apache_conf" "$tmp_local_apache_redirect_conf" "$tmp_local_apache_script"
   if [ "$XTRACE_WAS_ENABLED" -eq 1 ]; then
     set -x
   fi
