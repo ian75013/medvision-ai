@@ -160,12 +160,12 @@ configure_nginx() {
   fi
 
   if [ -z "$api_domain" ] || [ -z "$app_domain" ]; then
-    echo "Nginx provisioning skipped: set API_DOMAIN and APP_DOMAIN in env file." >&2
+    echo "Apache provisioning skipped: set API_DOMAIN and APP_DOMAIN in env file." >&2
     return 0
   fi
 
   if [ -z "$ssh_user" ] || [ -z "$ssh_host" ]; then
-    echo "Nginx provisioning skipped: SSH_USER/SSH_HOST are required." >&2
+    echo "Apache provisioning skipped: SSH_USER/SSH_HOST are required." >&2
     return 0
   fi
 
@@ -182,12 +182,24 @@ configure_nginx() {
   cat > "$tmp_local_apache_conf" <<EOF
 <VirtualHost *:80>
   ServerName ${api_domain}
-  Redirect permanent / https://${api_domain}/
+  ProxyPreserveHost On
+  ProxyRequests Off
+  ProxyTimeout 3600
+  ProxyPass / http://127.0.0.1:${api_host_port}/ retry=0 timeout=3600
+  ProxyPassReverse / http://127.0.0.1:${api_host_port}/
+  RequestHeader set X-Forwarded-Proto "http"
 </VirtualHost>
 
 <VirtualHost *:80>
   ServerName ${app_domain}
-  Redirect permanent / https://${app_domain}/
+  ProxyPreserveHost On
+  ProxyRequests Off
+  ProxyTimeout 3600
+  ProxyPass /_stcore/stream ws://127.0.0.1:${streamlit_host_port}/_stcore/stream retry=0 timeout=3600
+  ProxyPassReverse /_stcore/stream ws://127.0.0.1:${streamlit_host_port}/_stcore/stream
+  ProxyPass / http://127.0.0.1:${streamlit_host_port}/ retry=0 timeout=3600
+  ProxyPassReverse / http://127.0.0.1:${streamlit_host_port}/
+  RequestHeader set X-Forwarded-Proto "http"
 </VirtualHost>
 EOF
 
@@ -227,21 +239,44 @@ resolve_cert_pair() {
   local fallback_domain="$3"
   local host_domain="$4"
 
+  resolve_live_dir_pair() {
+    local candidate_dir="$1"
+    if [ -s "$candidate_dir/fullchain.pem" ] && [ -s "$candidate_dir/privkey.pem" ]; then
+      printf '%s|%s' "$candidate_dir/fullchain.pem" "$candidate_dir/privkey.pem"
+      return 0
+    fi
+    return 1
+  }
+
+  resolve_domain_glob_pair() {
+    local candidate_domain="$1"
+    local live_dir
+    for live_dir in /etc/letsencrypt/live/"${candidate_domain}"*; do
+      [ -d "$live_dir" ] || continue
+      if resolve_live_dir_pair "$live_dir"; then
+        return 0
+      fi
+    done
+    return 1
+  }
+
   if [ -s "$cert_path" ] && [ -s "$key_path" ]; then
     printf '%s|%s' "$cert_path" "$key_path"
     return 0
   fi
 
-  if [ -n "$fallback_domain" ] && [ -s "/etc/letsencrypt/live/${fallback_domain}/fullchain.pem" ] && [ -s "/etc/letsencrypt/live/${fallback_domain}/privkey.pem" ]; then
-    printf '%s|%s' "/etc/letsencrypt/live/${fallback_domain}/fullchain.pem" "/etc/letsencrypt/live/${fallback_domain}/privkey.pem"
+  if resolve_domain_glob_pair "$host_domain"; then
+    return 0
+  fi
+
+  if [ -n "$fallback_domain" ] && resolve_domain_glob_pair "$fallback_domain"; then
     return 0
   fi
 
   local parent1="${host_domain#*.}"
   local parent2="${parent1#*.}"
   for candidate in "$parent1" "$parent2"; do
-    if [ -n "$candidate" ] && [ "$candidate" != "$host_domain" ] && [ -s "/etc/letsencrypt/live/${candidate}/fullchain.pem" ] && [ -s "/etc/letsencrypt/live/${candidate}/privkey.pem" ]; then
-      printf '%s|%s' "/etc/letsencrypt/live/${candidate}/fullchain.pem" "/etc/letsencrypt/live/${candidate}/privkey.pem"
+    if [ -n "$candidate" ] && [ "$candidate" != "$host_domain" ] && resolve_domain_glob_pair "$candidate"; then
       return 0
     fi
   done

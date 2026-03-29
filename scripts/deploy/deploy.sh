@@ -171,6 +171,8 @@ deploy_vps_manual() {
   local sudo_password="${SUDO_PASSWORD:-}"
   local mlflow_bind_ip="${MLFLOW_BIND_IP:-10.8.0.1}"
   local mlflow_host_port="${MLFLOW_HOST_PORT:-5000}"
+  local api_domain="${API_DOMAIN:-}"
+  local app_domain="${APP_DOMAIN:-}"
   local api_bind_ip="${API_BIND_IP:-127.0.0.1}"
   local api_host_port="${API_HOST_PORT:-18000}"
   local streamlit_bind_ip="${STREAMLIT_BIND_IP:-127.0.0.1}"
@@ -345,6 +347,8 @@ fi
 
 export MLFLOW_BIND_IP="${mlflow_bind_ip}"
 export MLFLOW_HOST_PORT="${mlflow_host_port}"
+export API_DOMAIN="${api_domain}"
+export APP_DOMAIN="${app_domain}"
 export API_BIND_IP="${api_bind_ip}"
 export API_HOST_PORT="${api_host_port}"
 export STREAMLIT_BIND_IP="${streamlit_bind_ip}"
@@ -358,6 +362,8 @@ run_compose() {
   run_sudo env \
     MLFLOW_BIND_IP="${mlflow_bind_ip}" \
     MLFLOW_HOST_PORT="${mlflow_host_port}" \
+    API_DOMAIN="${api_domain}" \
+    APP_DOMAIN="${app_domain}" \
     API_BIND_IP="${api_bind_ip}" \
     API_HOST_PORT="${api_host_port}" \
     STREAMLIT_BIND_IP="${streamlit_bind_ip}" \
