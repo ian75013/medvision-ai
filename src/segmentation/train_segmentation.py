@@ -66,7 +66,8 @@ def main() -> None:
     set_seed(seed)
     image_size = int(cfg.get('image_size', 256))
     batch_size = int(cfg.get('batch_size', 8))
-    epochs = int(args.epochs or cfg.get('epochs', 10))
+    # Set epochs to None for dynamic logic below
+    epochs = args.epochs if args.epochs is not None else cfg.get('epochs', None)
     learning_rate = float(cfg.get('learning_rate', 1e-3))
     validation_split = float(cfg.get('validation_split', 0.2))
     task_type = cfg.get('task_type', 'multitask')
@@ -80,8 +81,8 @@ def main() -> None:
         task_type=task_type,
     )
 
-    # Dynamically adapt epochs if not set by user
-    if args.epochs is None and 'epochs' not in cfg:
+    # Dynamically adapt epochs if not set by user or config
+    if epochs is None:
         target_steps = 1000  # You can adjust this target as needed
         steps_per_epoch = int(np.ceil(train_size / batch_size))
         epochs = int(np.ceil(target_steps / steps_per_epoch))
