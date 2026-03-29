@@ -21,6 +21,19 @@ def _is_supported_image(path: Path) -> bool:
     return path.is_file() and path.suffix.lower() in IMAGE_EXTENSIONS
 
 
+def _looks_like_mask_path(path: Path) -> bool:
+    parts = [part.lower() for part in path.parts]
+    stem = path.stem.lower()
+    parent = path.parent.name.lower()
+    return (
+        "mask" in stem
+        or stem.endswith("_seg")
+        or "label" in stem
+        or parent in {"mask", "masks", "seg", "segs", "labels"}
+        or any(part in {"mask", "masks", "seg", "segs", "labels"} for part in parts)
+    )
+
+
 def _sample_public_id(path: Path) -> str:
     digest = hashlib.blake2s(str(path).encode("utf-8"), digest_size=5).hexdigest()
     return f"sample-{digest}"
@@ -69,6 +82,7 @@ def _collect_images_from_dirs(
     root: Path,
     limit: int,
     expected_labels: list[str] | None = None,
+    exclude_masks: bool = False,
 ) -> list[dict[str, Any]]:
     buckets: dict[str, list[dict[str, Any]]] = {}
     per_label_limit = None
@@ -82,6 +96,8 @@ def _collect_images_from_dirs(
             continue
         for path in directory.rglob("*"):
             if not _is_supported_image(path):
+                continue
+            if exclude_masks and _looks_like_mask_path(path):
                 continue
             label_hint = _infer_label_from_path(path, expected_labels)
             sample_id = _sample_public_id(path)
@@ -318,6 +334,7 @@ def _build_problem_image_database(problem: str, expected_labels: list[str] | Non
             root=root,
             limit=limit,
             expected_labels=expected_labels,
+            exclude_masks=True,
         )
     if problem == "chest_xray_segmentation":
         samples = _collect_images_from_manifest(
@@ -333,6 +350,7 @@ def _build_problem_image_database(problem: str, expected_labels: list[str] | Non
             root=root,
             limit=limit,
             expected_labels=expected_labels,
+            exclude_masks=True,
         )
         if samples:
             return samples
