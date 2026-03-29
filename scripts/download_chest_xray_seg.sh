@@ -33,11 +33,15 @@ else
     echo "Dossier déjà dézippé."
 fi
 
-# 6. (Optionnel) Déplace le contenu au bon endroit si besoin
 if [ -d "$DEST/Lung Segmentation" ]; then
-    echo "Déplacement des fichiers..."
-    mv "$DEST/Lung Segmentation"/* "$DEST"/
-    rmdir "$DEST/Lung Segmentation"
+    if [ "$(ls -A "$DEST/Lung Segmentation" 2>/dev/null)" ]; then
+        echo "Déplacement des fichiers..."
+        mv "$DEST/Lung Segmentation"/* "$DEST"/ 2>/dev/null || true
+        mv "$DEST/Lung Segmentation"/.[!.]* "$DEST"/ 2>/dev/null || true  # déplace aussi les fichiers cachés
+    else
+        echo "Dossier 'Lung Segmentation' déjà vide, rien à déplacer."
+    fi
+    rm -rf "$DEST/Lung Segmentation"
 fi
 
 echo "✅ Dataset chest_xray_segmentation prêt dans $DEST"
