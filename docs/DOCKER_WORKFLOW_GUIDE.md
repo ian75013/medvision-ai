@@ -46,7 +46,7 @@ bash -lc 'python -m src.data.prepare_segmentation_dataset --config configs/chest
 cd /opt/medvision-ai
 API_DOMAIN=api.example.com APP_DOMAIN=app.example.com \
 docker compose run --rm --no-deps api \
-bash -lc 'python -m src.training.train_segmentation --config configs/chest_xray_segmentation.yaml'
+bash -lc 'python -m src.segmentation.train_segmentation --config configs/chest_xray_segmentation.yaml'
 ```
 - Models are saved in `artifacts/models/chest_xray_segmentation/`
 
