@@ -29,6 +29,85 @@ def _label_from_path(path: Path, known_labels: Iterable[str]) -> str | None:
     return None
 
 
+def _resolve_binary_labels(known_labels: Iterable[str]) -> tuple[str | None, str | None]:
+    labels = list(known_labels)
+    normal_label = next((label for label in labels if "normal" in label.lower()), None)
+    abnormal_label = next(
+        (
+            label
+            for label in labels
+            if any(token in label.lower() for token in ("abnormal", "pneumonia", "positive", "tb", "tuberculosis"))
+        ),
+        None,
+    )
+    if abnormal_label is None:
+        abnormal_label = next((label for label in labels if label != normal_label), None)
+    return normal_label, abnormal_label
+
+
+def _infer_label_from_report_text(text: str, known_labels: list[str]) -> str | None:
+    normal_label, abnormal_label = _resolve_binary_labels(known_labels)
+    if normal_label is None and abnormal_label is None:
+        return None
+
+    content = " ".join(text.lower().split())
+    normal_markers = (
+        "normal",
+        "no active disease",
+        "no acute disease",
+        "no focal infiltrate",
+        "clear lungs",
+        "normal chest radiograph",
+        "heart size is normal",
+    )
+    abnormal_markers = (
+        "abnormal",
+        "tuberculosis",
+        "tb",
+        "infiltrate",
+        "opacity",
+        "opacities",
+        "consolidation",
+        "effusion",
+        "lesion",
+        "calcification",
+        "cavity",
+        "fibrosis",
+        "disease",
+        "pneumonia",
+        "cardiopulmonary abnormality",
+    )
+
+    has_normal = any(marker in content for marker in normal_markers)
+    has_abnormal = any(marker in content for marker in abnormal_markers)
+
+    if has_normal and not has_abnormal:
+        return normal_label
+    if has_abnormal:
+        return abnormal_label
+    return None
+
+
+def _build_report_label_map(raw_dir: Path, known_labels: list[str]) -> dict[str, str]:
+    report_dirs = [raw_dir / "ClinicalReadings", raw_dir / "clinicalreadings"]
+    report_dir = next((path for path in report_dirs if path.exists()), None)
+    if report_dir is None:
+        return {}
+
+    labels: dict[str, str] = {}
+    for report_path in report_dir.rglob("*"):
+        if not report_path.is_file():
+            continue
+        try:
+            content = report_path.read_text(encoding="utf-8", errors="ignore")
+        except Exception:
+            continue
+        label = _infer_label_from_report_text(content, known_labels)
+        if label is not None:
+            labels[_normalize_stem(report_path)] = label
+    return labels
+
+
 def _looks_like_mask(path: Path) -> bool:
     name = path.stem.lower()
     parent = path.parent.name.lower()
@@ -45,6 +124,7 @@ def build_manifest(raw_dir: str | Path, output_csv: str | Path, known_labels: li
     output_csv = Path(output_csv)
 
     files = [p for p in raw_dir.rglob("*") if p.is_file() and p.suffix.lower() in IMAGE_EXTS]
+    report_labels = _build_report_label_map(raw_dir, known_labels)
 
     grouped: dict[str, list[Path]] = {}
     for path in files:
@@ -76,7 +156,9 @@ def build_manifest(raw_dir: str | Path, output_csv: str | Path, known_labels: li
         if image_path is None or mask_path is None:
             continue
 
-        label = _label_from_path(image_path, known_labels)
+        label = report_labels.get(_normalize_stem(image_path)) or _label_from_path(image_path, known_labels)
+        if report_labels and label is None:
+            continue
         split = "test" if "test" in str(image_path).lower() else "train"
 
         rows.append(

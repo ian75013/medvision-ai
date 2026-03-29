@@ -61,7 +61,7 @@ PROBLEMS: Dict[str, Dict[str, Any]] = {
         "task_type": "segmentation_multitask",
     },
     "chest_xray_segmentation": {
-        "label": "Chest X-ray Lung Segmentation + Pneumonia Classification",
+        "label": "Chest X-ray Lung Segmentation + Abnormality Classification",
         "config_path": "configs/chest_xray_segmentation.yaml",
         "model_candidates": {
             "unet_multitask": "chest_xray_segmentation_unet.keras",
@@ -69,7 +69,7 @@ PROBLEMS: Dict[str, Dict[str, Any]] = {
         "metrics_candidates": {
             "unet_multitask": ["chest_xray_segmentation_unet_metrics.json"],
         },
-        "class_names": ["NORMAL", "PNEUMONIA"],
+        "class_names": ["NORMAL", "ABNORMAL"],
         "task_type": "segmentation_multitask",
     },
 }

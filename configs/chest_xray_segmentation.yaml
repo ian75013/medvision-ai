@@ -19,5 +19,5 @@ segmentation_loss_weight: 1.0
 classification_loss_weight: 0.4
 class_names:
   - NORMAL
-  - PNEUMONIA
+  - ABNORMAL
 mlflow_tracking_uri: file:./mlruns

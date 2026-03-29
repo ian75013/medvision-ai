@@ -226,6 +226,13 @@ def _filter_samples(samples: list[dict[str, Any]], labels: list[str], query: str
     return filtered
 
 
+def _samples_with_expected_labels(samples: list[dict[str, Any]], expected_labels: list[str] | None) -> list[dict[str, Any]]:
+    if not expected_labels:
+        return samples
+    expected = {str(label).lower() for label in expected_labels}
+    return [sample for sample in samples if str(sample.get("label", "")).lower() in expected]
+
+
 def _recommended_samples(samples: list[dict[str, Any]], max_items: int = 4) -> list[dict[str, Any]]:
     if not samples:
         return []
@@ -352,6 +359,7 @@ def _build_problem_image_database(problem: str, expected_labels: list[str] | Non
             expected_labels=expected_labels,
             exclude_masks=True,
         )
+        samples = _samples_with_expected_labels(samples, expected_labels)
         if samples:
             return samples
         return _collect_images_from_dirs(

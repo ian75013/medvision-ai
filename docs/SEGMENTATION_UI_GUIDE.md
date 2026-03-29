@@ -22,7 +22,7 @@ streamlit run streamlit_app.py
 2. In the left panel, select a segmentation problem:
 
 - Brain Tumor Segmentation + Classification
-- Chest X-ray Segmentation + Classification
+- Chest X-ray Segmentation + Abnormality Classification
 
 3. Upload an image and select one or more available models.
 

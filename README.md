@@ -12,7 +12,7 @@ We currently maintain four runnable tracks:
 1. Chest X-ray pneumonia classification
 2. Brain MRI tumor classification
 3. Brain tumor segmentation + classification (multitask U-Net)
-4. Chest X-ray lung segmentation + pneumonia classification (multitask U-Net)
+4. Chest X-ray lung segmentation + abnormality classification (multitask U-Net)
 
 Main stack:
 
@@ -288,7 +288,7 @@ Main outputs:
 
 The generated manifest in data/processed is critical because it defines image/mask pairs used by training.
 
-### 7.4 Chest X-ray segmentation (multitask)
+### 7.4 Chest X-ray segmentation + abnormality classification (multitask)
 
 ```bash
 python -m src.data.download_segmentation_dataset --problem chest_xray_seg
@@ -304,6 +304,7 @@ Main outputs:
 - artifacts/overlays/chest_xray_segmentation_unet_sample_overlay.png
 
 Same principle as brain segmentation: if the manifest is wrong, training quality is compromised.
+This track is based on lung-mask data plus clinical readings and should be interpreted as `NORMAL` vs `ABNORMAL`, not as a pneumonia-specific classifier.
 
 ## 8. FastAPI
 
