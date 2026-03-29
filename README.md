@@ -424,6 +424,20 @@ docker compose down
 
 Good for a full local demo. For debugging, running services one by one is often easier.
 
+### Dataset download from Docker
+
+If you prefer to download datasets inside the container (useful on VPS or when the Python environment is only in Docker), use:
+
+```bash
+# Requires ~/.kaggle/kaggle.json on the host, or KAGGLE_USERNAME + KAGGLE_KEY env vars
+bash scripts/download_dataset_docker.sh
+
+# Force re-download
+bash scripts/download_dataset_docker.sh --force
+```
+
+Data is written to `data/raw/` via the volume mount and is immediately available to all other `docker compose run` commands.
+
 ### Training from Docker
 
 Build training image once:
@@ -465,6 +479,8 @@ Available scripts:
 - scripts/run_training_brain_mri_docker.sh
 - scripts/run_training_segmentation_brain_docker.sh
 - scripts/run_training_segmentation_chest_docker.sh
+- scripts/download_dataset.sh — download all datasets (local venv)
+- scripts/download_dataset_docker.sh — download all datasets inside Docker
 - scripts/download_dataset.ps1
 - scripts/download_dataset.bat
 

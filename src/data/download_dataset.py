@@ -60,8 +60,6 @@ def download_zip(dataset: str, raw_dir: Path, force: bool) -> Path:
         dataset,
         "-p",
         str(raw_dir),
-        "-f",
-        "chest-xray-pneumonia.zip",
     ]
     subprocess.run(cmd, check=True)
     return zip_path
