@@ -126,8 +126,15 @@ def main() -> None:
                 'batch_size': batch_size,
                 'epochs': epochs,
                 'learning_rate': learning_rate,
+                'validation_split': validation_split,
                 'task_type': task_type,
                 'class_names': ','.join(class_names),
+                'seed': seed,
+                'segmentation_loss_weight': float(cfg.get('segmentation_loss_weight', 1.0)),
+                'classification_loss_weight': float(cfg.get('classification_loss_weight', 0.4)),
+                'model_dir': str(model_dir),
+                'reports_dir': str(reports_dir),
+                'overlays_dir': str(overlays_dir),
             })
             history = model.fit(train_ds, validation_data=val_ds, epochs=epochs, callbacks=callbacks, verbose=1)
     except Exception as mlflow_exc:
