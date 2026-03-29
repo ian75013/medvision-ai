@@ -301,7 +301,6 @@ if [ "$api_cert_ok" != "true" ] || [ "$app_cert_ok" != "true" ]; then
       else
         echo "[deploy-ovh] LETSENCRYPT_EMAIL is empty; skipping certbot bootstrap." >&2
       fi
-      run_sudo touch "$marker_file"
     fi
   fi
 fi
@@ -315,6 +314,15 @@ if app_pair="$(resolve_cert_pair "$APACHE_APP_SSL_CERT" "$APACHE_APP_SSL_KEY" "$
   app_cert_ok=true
 else
   app_cert_ok=false
+fi
+
+if [ "${AUTO_CERTBOT_ONCE:-true}" = "true" ]; then
+  marker_file="/etc/letsencrypt/.medvision-certbot-bootstrap.done"
+  if ! run_sudo test -f "$marker_file"; then
+    if [ "$api_cert_ok" = "true" ] && [ "$app_cert_ok" = "true" ]; then
+      run_sudo touch "$marker_file"
+    fi
+  fi
 fi
 
 if [ "$api_cert_ok" = "true" ] && [ "$app_cert_ok" = "true" ]; then
@@ -364,7 +372,6 @@ EOF_SSL
   run_sudo apache2ctl configtest
   run_sudo systemctl reload apache2
   echo "[deploy-ovh] Apache SSL site enabled for MedVision domains." >&2
-  echo "[deploy-ovh] SSL certs used: API=${api_cert_resolved} APP=${app_cert_resolved}" >&2
 else
   run_sudo a2dissite medvision-ai-ssl >/dev/null 2>&1 || true
   echo "[deploy-ovh] Apache SSL site skipped: certificates are not available yet." >&2
@@ -376,7 +383,7 @@ SCRIPT_EOF
   scp -P "$ssh_port" "$tmp_local_apache_script" "${ssh_target}:${tmp_remote_apache_script}"
   ssh "${ssh_tty_args[@]}" -p "$ssh_port" "$ssh_target" \
     "SUDO_PASSWORD=$(printf %q "$sudo_password") USE_REMOTE_SUDO_PROMPT=$(printf %q "${USE_REMOTE_SUDO_PROMPT:-false}") TMP_REMOTE_APACHE_CONF=$(printf %q "$tmp_remote_apache_conf") API_DOMAIN=$(printf %q "$api_domain") APP_DOMAIN=$(printf %q "$app_domain") API_HOST_PORT=$(printf %q "$api_host_port") STREAMLIT_HOST_PORT=$(printf %q "$streamlit_host_port") APACHE_API_SSL_CERT=$(printf %q "$apache_api_ssl_cert") APACHE_API_SSL_KEY=$(printf %q "$apache_api_ssl_key") APACHE_APP_SSL_CERT=$(printf %q "$apache_app_ssl_cert") APACHE_APP_SSL_KEY=$(printf %q "$apache_app_ssl_key") APACHE_SSL_FALLBACK_DOMAIN=$(printf %q "$apache_ssl_fallback_domain") LETSENCRYPT_EMAIL=$(printf %q "$letsencrypt_email") AUTO_CERTBOT_ONCE=$(printf %q "$auto_certbot_once") bash ${tmp_remote_apache_script}"
-  echo "[deploy-ovh] Apache reverse proxy configured: ${api_domain} -> 127.0.0.1:${api_host_port}, ${app_domain} -> 127.0.0.1:${streamlit_host_port}" >&2
+  echo "[deploy-ovh] Apache reverse proxy configured." >&2
 
   rm -f "$tmp_local_apache_conf" "$tmp_local_apache_script"
   if [ "$XTRACE_WAS_ENABLED" -eq 1 ]; then
