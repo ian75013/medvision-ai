@@ -136,11 +136,41 @@ def main() -> None:
                 'reports_dir': str(reports_dir),
                 'overlays_dir': str(overlays_dir),
             })
-            history = model.fit(train_ds, validation_data=val_ds, epochs=epochs, callbacks=callbacks, verbose=1)
+            steps_per_epoch = int(np.ceil(train_size / batch_size))
+            val_steps = None
+            if hasattr(val_ds, '__len__'):
+                try:
+                    val_steps = int(np.ceil(len(val_ds) / batch_size))
+                except Exception:
+                    val_steps = None
+            history = model.fit(
+                train_ds,
+                validation_data=val_ds,
+                epochs=epochs,
+                callbacks=callbacks,
+                verbose=1,
+                steps_per_epoch=steps_per_epoch,
+                validation_steps=val_steps,
+            )
     except Exception as mlflow_exc:
         print(f"[WARNING] MLflow logging failed: {mlflow_exc}\nContinuing with local model saving.")
         # Fallback: run training without MLflow
-        history = model.fit(train_ds, validation_data=val_ds, epochs=epochs, callbacks=callbacks, verbose=1)
+        steps_per_epoch = int(np.ceil(train_size / batch_size))
+        val_steps = None
+        if hasattr(val_ds, '__len__'):
+            try:
+                val_steps = int(np.ceil(len(val_ds) / batch_size))
+            except Exception:
+                val_steps = None
+        history = model.fit(
+            train_ds,
+            validation_data=val_ds,
+            epochs=epochs,
+            callbacks=callbacks,
+            verbose=1,
+            steps_per_epoch=steps_per_epoch,
+            validation_steps=val_steps,
+        )
 
     all_true_masks: list[np.ndarray] = []
     all_pred_masks: list[np.ndarray] = []
