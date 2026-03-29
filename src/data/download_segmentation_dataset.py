@@ -3,10 +3,9 @@ from __future__ import annotations
 
 import argparse
 import shutil
+import subprocess
 import zipfile
 from pathlib import Path
-
-from kaggle.api.kaggle_api_extended import KaggleApi
 
 SEGMENTATION_DATASETS = {
     'brain_tumor_seg': {
@@ -33,6 +32,42 @@ def _extract_all(zip_path: Path, dest: Path) -> None:
         zf.extractall(dest)
 
 
+def _download_with_cli(slug: str, download_dir: Path) -> Path:
+    if shutil.which('kaggle') is None:
+        raise FileNotFoundError('Kaggle CLI is not installed')
+
+    cmd = ['kaggle', 'datasets', 'download', '-d', slug, '-p', str(download_dir), '-o']
+    result = subprocess.run(cmd, check=False)
+    if result.returncode != 0:
+        raise RuntimeError(f'Kaggle CLI download failed with exit code {result.returncode}')
+
+    zip_path = download_dir / f"{slug.split('/')[-1]}.zip"
+    if zip_path.exists():
+        return zip_path
+
+    candidates = sorted(download_dir.glob('*.zip'), key=lambda p: p.stat().st_mtime, reverse=True)
+    if not candidates:
+        raise RuntimeError('Kaggle CLI reported success but no zip archive was found')
+    return candidates[0]
+
+
+def _download_with_api(slug: str, download_dir: Path) -> Path:
+    from kaggle.api.kaggle_api_extended import KaggleApi
+
+    api = KaggleApi()
+    api.authenticate()
+    api.dataset_download_files(slug, path=str(download_dir), unzip=False)
+
+    zip_path = download_dir / f"{slug.split('/')[-1]}.zip"
+    if zip_path.exists():
+        return zip_path
+
+    candidates = sorted(download_dir.glob('*.zip'), key=lambda p: p.stat().st_mtime, reverse=True)
+    if not candidates:
+        raise RuntimeError('Kaggle API reported success but no zip archive was found')
+    return candidates[0]
+
+
 def main() -> None:
     args = parse_args()
     spec = SEGMENTATION_DATASETS[args.problem]
@@ -45,12 +80,21 @@ def main() -> None:
         shutil.rmtree(target_dir)
     target_dir.mkdir(parents=True, exist_ok=True)
 
-    api = KaggleApi()
-    api.authenticate()
     download_dir = target_dir.parent
-    api.dataset_download_files(spec['slug'], path=str(download_dir), unzip=False)
-    zip_name = spec['slug'].split('/')[-1] + '.zip'
-    zip_path = download_dir / zip_name
+    try:
+        zip_path = _download_with_cli(spec['slug'], download_dir)
+    except Exception as cli_err:
+        print(f'Kaggle CLI path failed ({cli_err}); falling back to Kaggle API client...')
+        try:
+            zip_path = _download_with_api(spec['slug'], download_dir)
+        except Exception as api_err:
+            raise SystemExit(
+                f'Failed to download dataset {spec["slug"]}. '
+                f'CLI error: {cli_err}. API error: {api_err}.\n'
+                'If the process is being killed by the OS, check memory/disk on the host '
+                '(e.g. `free -h`, `df -h`, `dmesg -T | grep -Ei "killed process|oom" | tail`).'
+            )
+
     _extract_all(zip_path, target_dir)
     print(f'Downloaded and extracted {spec["slug"]} to {target_dir}')
 
