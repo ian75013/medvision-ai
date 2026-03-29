@@ -144,7 +144,8 @@ configure_nginx() {
   local app_domain="${APP_DOMAIN:-}"
   local app_dir="${APP_DIR:-/opt/medvision-ai}"
   local sudo_password="${SUDO_PASSWORD:-}"
-  local nginx_http_host_port="${NGINX_HTTP_HOST_PORT:-18080}"
+  local api_host_port="${API_HOST_PORT:-18000}"
+  local streamlit_host_port="${STREAMLIT_HOST_PORT:-18501}"
   local letsencrypt_email="${LETSENCRYPT_EMAIL:-${CADDY_EMAIL:-}}"
   local auto_certbot_once="${AUTO_CERTBOT_ONCE:-true}"
   local apache_ssl_fallback_domain="${APACHE_SSL_FALLBACK_DOMAIN:-}"
@@ -174,25 +175,19 @@ configure_nginx() {
     set +x
   fi
 
-  # Bridge public Apache vhosts to Dockerized nginx on loopback via dedicated site.
+  # Expose public Apache vhosts directly to the Docker API and Streamlit services.
   local tmp_local_apache_conf
   tmp_local_apache_conf="$(mktemp)"
   local tmp_remote_apache_conf="/tmp/medvision-apache-site.conf"
   cat > "$tmp_local_apache_conf" <<EOF
 <VirtualHost *:80>
   ServerName ${api_domain}
-  ProxyPreserveHost On
-  ProxyPass / http://127.0.0.1:${nginx_http_host_port}/
-  ProxyPassReverse / http://127.0.0.1:${nginx_http_host_port}/
-  RequestHeader set X-Forwarded-Proto "http"
+  Redirect permanent / https://${api_domain}/
 </VirtualHost>
 
 <VirtualHost *:80>
   ServerName ${app_domain}
-  ProxyPreserveHost On
-  ProxyPass / http://127.0.0.1:${nginx_http_host_port}/
-  ProxyPassReverse / http://127.0.0.1:${nginx_http_host_port}/
-  RequestHeader set X-Forwarded-Proto "http"
+  Redirect permanent / https://${app_domain}/
 </VirtualHost>
 EOF
 
@@ -220,7 +215,7 @@ if ! command -v apache2ctl >/dev/null 2>&1; then
 fi
 
 run_sudo install -m 644 "$TMP_REMOTE_APACHE_CONF" /etc/apache2/sites-available/medvision-ai.conf
-run_sudo a2enmod proxy proxy_http headers ssl >/dev/null
+run_sudo a2enmod proxy proxy_http proxy_wstunnel headers ssl rewrite >/dev/null
 run_sudo a2disconf medvision-ai-proxy >/dev/null 2>&1 || true
 run_sudo a2ensite medvision-ai >/dev/null
 run_sudo apache2ctl configtest
@@ -297,9 +292,13 @@ if [ "$api_cert_ok" = "true" ] && [ "$app_cert_ok" = "true" ]; then
   SSLEngine on
   SSLCertificateFile ${api_cert_resolved}
   SSLCertificateKeyFile ${api_key_resolved}
+  Include /etc/letsencrypt/options-ssl-apache.conf
   ProxyPreserveHost On
-  ProxyPass / http://127.0.0.1:${NGINX_HTTP_HOST_PORT}/
-  ProxyPassReverse / http://127.0.0.1:${NGINX_HTTP_HOST_PORT}/
+  ProxyRequests Off
+  SSLProxyEngine On
+  ProxyTimeout 3600
+  ProxyPass / http://127.0.0.1:${API_HOST_PORT}/ retry=0 timeout=3600
+  ProxyPassReverse / http://127.0.0.1:${API_HOST_PORT}/
   RequestHeader set X-Forwarded-Proto "https"
 </VirtualHost>
 
@@ -308,9 +307,15 @@ if [ "$api_cert_ok" = "true" ] && [ "$app_cert_ok" = "true" ]; then
   SSLEngine on
   SSLCertificateFile ${app_cert_resolved}
   SSLCertificateKeyFile ${app_key_resolved}
+  Include /etc/letsencrypt/options-ssl-apache.conf
   ProxyPreserveHost On
-  ProxyPass / http://127.0.0.1:${NGINX_HTTP_HOST_PORT}/
-  ProxyPassReverse / http://127.0.0.1:${NGINX_HTTP_HOST_PORT}/
+  ProxyRequests Off
+  SSLProxyEngine On
+  ProxyTimeout 3600
+  ProxyPass /_stcore/stream ws://127.0.0.1:${STREAMLIT_HOST_PORT}/_stcore/stream retry=0 timeout=3600
+  ProxyPassReverse /_stcore/stream ws://127.0.0.1:${STREAMLIT_HOST_PORT}/_stcore/stream
+  ProxyPass / http://127.0.0.1:${STREAMLIT_HOST_PORT}/ retry=0 timeout=3600
+  ProxyPassReverse / http://127.0.0.1:${STREAMLIT_HOST_PORT}/
   RequestHeader set X-Forwarded-Proto "https"
 </VirtualHost>
 </IfModule>
@@ -332,8 +337,8 @@ SCRIPT_EOF
   scp -P "$ssh_port" "$tmp_local_apache_conf" "${ssh_target}:${tmp_remote_apache_conf}"
   scp -P "$ssh_port" "$tmp_local_apache_script" "${ssh_target}:${tmp_remote_apache_script}"
   ssh "${ssh_tty_args[@]}" -p "$ssh_port" "$ssh_target" \
-    "SUDO_PASSWORD=$(printf %q "$sudo_password") USE_REMOTE_SUDO_PROMPT=$(printf %q "${USE_REMOTE_SUDO_PROMPT:-false}") TMP_REMOTE_APACHE_CONF=$(printf %q "$tmp_remote_apache_conf") API_DOMAIN=$(printf %q "$api_domain") APP_DOMAIN=$(printf %q "$app_domain") NGINX_HTTP_HOST_PORT=$(printf %q "$nginx_http_host_port") APACHE_API_SSL_CERT=$(printf %q "$apache_api_ssl_cert") APACHE_API_SSL_KEY=$(printf %q "$apache_api_ssl_key") APACHE_APP_SSL_CERT=$(printf %q "$apache_app_ssl_cert") APACHE_APP_SSL_KEY=$(printf %q "$apache_app_ssl_key") APACHE_SSL_FALLBACK_DOMAIN=$(printf %q "$apache_ssl_fallback_domain") LETSENCRYPT_EMAIL=$(printf %q "$letsencrypt_email") AUTO_CERTBOT_ONCE=$(printf %q "$auto_certbot_once") bash ${tmp_remote_apache_script}"
-  echo "[deploy-ovh] Apache bridge configured for ${api_domain} and ${app_domain} -> 127.0.0.1:${nginx_http_host_port}" >&2
+    "SUDO_PASSWORD=$(printf %q "$sudo_password") USE_REMOTE_SUDO_PROMPT=$(printf %q "${USE_REMOTE_SUDO_PROMPT:-false}") TMP_REMOTE_APACHE_CONF=$(printf %q "$tmp_remote_apache_conf") API_DOMAIN=$(printf %q "$api_domain") APP_DOMAIN=$(printf %q "$app_domain") API_HOST_PORT=$(printf %q "$api_host_port") STREAMLIT_HOST_PORT=$(printf %q "$streamlit_host_port") APACHE_API_SSL_CERT=$(printf %q "$apache_api_ssl_cert") APACHE_API_SSL_KEY=$(printf %q "$apache_api_ssl_key") APACHE_APP_SSL_CERT=$(printf %q "$apache_app_ssl_cert") APACHE_APP_SSL_KEY=$(printf %q "$apache_app_ssl_key") APACHE_SSL_FALLBACK_DOMAIN=$(printf %q "$apache_ssl_fallback_domain") LETSENCRYPT_EMAIL=$(printf %q "$letsencrypt_email") AUTO_CERTBOT_ONCE=$(printf %q "$auto_certbot_once") bash ${tmp_remote_apache_script}"
+  echo "[deploy-ovh] Apache reverse proxy configured: ${api_domain} -> 127.0.0.1:${api_host_port}, ${app_domain} -> 127.0.0.1:${streamlit_host_port}" >&2
 
   rm -f "$tmp_local_apache_conf" "$tmp_local_apache_script"
   if [ "$XTRACE_WAS_ENABLED" -eq 1 ]; then
@@ -350,14 +355,14 @@ provision_proxy_if_enabled() {
     caddy)
       configure_caddy
       ;;
-    nginx)
+    apache|nginx)
       configure_nginx
       ;;
     none|off)
       echo "Proxy provisioning disabled (PROXY_PROVIDER=${PROXY_PROVIDER})." >&2
       ;;
     *)
-      echo "Unsupported PROXY_PROVIDER: ${PROXY_PROVIDER}. Use caddy, nginx, none." >&2
+      echo "Unsupported PROXY_PROVIDER: ${PROXY_PROVIDER}. Use apache, caddy, nginx, none." >&2
       exit 1
       ;;
   esac
