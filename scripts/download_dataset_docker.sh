@@ -52,7 +52,7 @@ run_download_step "[3/6] Brain tumor segmentation dataset" \
     "python -m src.data.download_segmentation_dataset --problem brain_tumor_seg ${FORCE}"
 
 run_download_step "[4/6] Chest X-ray segmentation dataset" \
-    "python -m src.data.download_segmentation_dataset --problem chest_xray_seg ${FORCE}"
+    "python -m src.data.download_segmentation_dataset --problem chest_xray_seg ${FORCE} || (echo 'Chest X-ray segmentation download failed once, retrying with --force...' && python -m src.data.download_segmentation_dataset --problem chest_xray_seg --force)"
 
 run_download_step "[5/6] Prepare brain tumor segmentation manifest" \
     "python -m src.data.prepare_segmentation_dataset --config configs/brain_tumor_segmentation.yaml"
