@@ -239,28 +239,20 @@ resolve_cert_pair() {
   local fallback_domain="$3"
   local host_domain="$4"
 
-  resolve_live_dir_pair() {
-    local candidate_dir="$1"
-    if [ -s "$candidate_dir/fullchain.pem" ] && [ -s "$candidate_dir/privkey.pem" ]; then
-      printf '%s|%s' "$candidate_dir/fullchain.pem" "$candidate_dir/privkey.pem"
-      return 0
-    fi
-    return 1
-  }
-
   resolve_domain_glob_pair() {
     local candidate_domain="$1"
     local live_dir
-    for live_dir in /etc/letsencrypt/live/"${candidate_domain}"*; do
-      [ -d "$live_dir" ] || continue
-      if resolve_live_dir_pair "$live_dir"; then
+    while IFS= read -r live_dir; do
+      [ -n "$live_dir" ] || continue
+      if run_sudo test -s "$live_dir/fullchain.pem" && run_sudo test -s "$live_dir/privkey.pem"; then
+        printf '%s|%s' "$live_dir/fullchain.pem" "$live_dir/privkey.pem"
         return 0
       fi
-    done
+    done < <(run_sudo find /etc/letsencrypt/live -maxdepth 1 -mindepth 1 -type d -name "${candidate_domain}*" 2>/dev/null)
     return 1
   }
 
-  if [ -s "$cert_path" ] && [ -s "$key_path" ]; then
+  if run_sudo test -s "$cert_path" && run_sudo test -s "$key_path"; then
     printf '%s|%s' "$cert_path" "$key_path"
     return 0
   fi
@@ -300,7 +292,7 @@ fi
 if [ "$api_cert_ok" != "true" ] || [ "$app_cert_ok" != "true" ]; then
   if [ "${AUTO_CERTBOT_ONCE:-true}" = "true" ]; then
     marker_file="/etc/letsencrypt/.medvision-certbot-bootstrap.done"
-    if [ ! -f "$marker_file" ]; then
+    if ! run_sudo test -f "$marker_file"; then
       if [ -n "${LETSENCRYPT_EMAIL:-}" ]; then
         run_sudo apt-get update
         run_sudo apt-get install -y certbot python3-certbot-apache
@@ -312,6 +304,17 @@ if [ "$api_cert_ok" != "true" ] || [ "$app_cert_ok" != "true" ]; then
       run_sudo touch "$marker_file"
     fi
   fi
+fi
+
+if api_pair="$(resolve_cert_pair "$APACHE_API_SSL_CERT" "$APACHE_API_SSL_KEY" "${APACHE_SSL_FALLBACK_DOMAIN:-}" "$API_DOMAIN")"; then
+  api_cert_ok=true
+else
+  api_cert_ok=false
+fi
+if app_pair="$(resolve_cert_pair "$APACHE_APP_SSL_CERT" "$APACHE_APP_SSL_KEY" "${APACHE_SSL_FALLBACK_DOMAIN:-}" "$APP_DOMAIN")"; then
+  app_cert_ok=true
+else
+  app_cert_ok=false
 fi
 
 if [ "$api_cert_ok" = "true" ] && [ "$app_cert_ok" = "true" ]; then
