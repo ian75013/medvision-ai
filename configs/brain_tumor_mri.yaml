@@ -2,7 +2,7 @@ project_name: medvision-brain-mri
 seed: 42
 image_size: 224
 batch_size: 16
-epochs: 8
+epochs: 24
 learning_rate: 0.0003
 validation_split: 0.15
 num_classes: 4
@@ -13,9 +13,16 @@ model_dir: artifacts/models
 reports_dir: artifacts/reports
 mlflow_tracking_uri: file:./mlruns
 class_names:
-  - glioma
-  - meningioma
-  - notumor
-  - pituitary
+- glioma
+- meningioma
+- notumor
+- pituitary
 dataset_slug: masoudnickparvar/brain-tumor-mri-dataset
 archive_name: brain-tumor-mri-dataset.zip
+warmup_epochs: 6
+warmup_learning_rate: 0.001
+finetune_learning_rate: 3.0e-05
+label_smoothing: 0.05
+unfreeze_layers: 50
+dropout: 0.25
+torch_unfreeze_blocks: 2

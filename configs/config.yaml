@@ -2,7 +2,7 @@ project_name: medvision-ai
 seed: 42
 image_size: 224
 batch_size: 16
-epochs: 3
+epochs: 16
 learning_rate: 0.0005
 validation_split: 0.2
 dataset_dir: data/raw/chest_xray
@@ -10,6 +10,12 @@ model_dir: artifacts/models
 reports_dir: artifacts/reports
 mlflow_tracking_uri: file:./mlruns
 class_names:
-  - NORMAL
-  - PNEUMONIA
+- NORMAL
+- PNEUMONIA
 dataset_slug: paultimothymooney/chest-xray-pneumonia
+warmup_epochs: 4
+warmup_learning_rate: 0.001
+finetune_learning_rate: 3.0e-05
+label_smoothing: 0.0
+unfreeze_layers: 40
+dropout: 0.3

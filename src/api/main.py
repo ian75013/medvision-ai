@@ -34,6 +34,8 @@ def _predict_with_entry(model_entry: Dict[str, Any], image_path: Path, image_siz
     model_path = Path(model_entry["model_path"])
     if not model_path.exists():
         raise HTTPException(status_code=404, detail=f"Model not found: {model_path}")
+    if model_entry.get("framework") != "tensorflow":
+        raise HTTPException(status_code=400, detail="This prediction endpoint currently serves TensorFlow models only. Use the registry/compare views for PyTorch runs.")
 
     model = load_tf_model(str(model_path.resolve()))
     image = load_and_preprocess_image(image_path, image_size=image_size)

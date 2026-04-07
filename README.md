@@ -17,6 +17,7 @@ We currently maintain four runnable tracks:
 Main stack:
 
 - TensorFlow/Keras for training and inference
+- Optional PyTorch classification track for Brain MRI benchmarking
 - MLflow for experiment tracking
 - DVC for reproducible data/model pipelines
 - FastAPI for inference endpoints
@@ -572,3 +573,32 @@ After config changes, dvc status is usually the fastest way to see what is out o
 - README_MRI_SPRINTS.md
 
 If anything is unclear during onboarding, update this README directly so the next person benefits from it.
+
+
+## 3. Recommended transfer-learning runs
+
+The classification tracks now support stronger pretrained backbones and progressive fine-tuning.
+
+### Chest X-ray
+
+```bash
+python -m src.training.train --config configs/config.yaml --model densenet121
+python -m src.training.train --config configs/config.yaml --model efficientnetv2b0
+```
+
+### Brain MRI (TensorFlow)
+
+```bash
+python -m src.training.train_brain_mri --config configs/brain_tumor_mri.yaml --model densenet121
+python -m src.training.train_brain_mri --config configs/brain_tumor_mri.yaml --model efficientnetv2b0
+python -m src.training.train_brain_mri --config configs/brain_tumor_mri.yaml --model convnexttiny
+```
+
+### Brain MRI (PyTorch, optional)
+
+```bash
+python -m src.training.train_brain_mri_torch --config configs/brain_tumor_mri.yaml --model densenet121_torch
+python -m src.training.train_brain_mri_torch --config configs/brain_tumor_mri.yaml --model swin_v2_s_torch
+```
+
+See `docs/TRANSFER_LEARNING_GUIDE.md` for the exact rationale and comparison strategy.
