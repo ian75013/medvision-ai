@@ -7,6 +7,12 @@
 This repository is our working base for medical imaging experiments.
 It is structured so a new team member can get from setup to a first successful run quickly, then understand how data, training, evaluation, and serving fit together.
 
+## Important: MLflow experiment plan (accuracy)
+
+For the latest transfer learning updates and a concrete MLflow strategy to improve accuracy, start here:
+
+- docs/MLFLOW_EXPERIMENT_PLAN_2026-04-07.md
+
 We currently maintain four runnable tracks:
 
 1. Chest X-ray pneumonia classification
@@ -567,6 +573,7 @@ After config changes, dvc status is usually the fastest way to see what is out o
 - docs/DEPLOYMENT_PLAYBOOK_AWS_AZURE_K3S_OVH.md
 - docs/REVERSE_PROXY_DNS.md
 - docs/MLOPS_GUIDE.md
+- docs/MLFLOW_EXPERIMENT_PLAN_2026-04-07.md
 - docs/COMPONENTS.md
 - docs/KNOWN_GAPS.md
 - README_DVC.md
