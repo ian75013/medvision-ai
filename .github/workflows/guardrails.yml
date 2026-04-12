@@ -1,0 +1,23 @@
+name: Guardrails
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - master
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Ensure guardrails assets
+        run: |
+          test -f .guardrails/config.env || { echo "Missing .guardrails/config.env"; exit 1; }
+          test -x .guardrails/bin/validate_guardrails.sh || { echo "Missing .guardrails/bin/validate_guardrails.sh"; exit 1; }
+
+      - name: Run guardrails validator
+        run: ./.guardrails/bin/validate_guardrails.sh
