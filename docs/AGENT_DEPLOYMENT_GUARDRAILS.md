@@ -17,6 +17,8 @@ Prevent recurring deployment incidents across repositories by enforcing non-dest
 - Confirm target env file.
 - Confirm frontend API base URL is public and correct.
 - Confirm credentials/tokens for any new provider.
+- On VPS deployments, verify required ports are free before starting deploy.
+- Fast-fail rule: if a required port is busy, abort immediately with a clear error and next action. Never continue with trial-and-error for hours.
 
 4. Post-deploy smoke tests are blocking
 - Frontend root returns 200.
@@ -38,9 +40,11 @@ Prevent recurring deployment incidents across repositories by enforcing non-dest
 2. Correct branch/commit selected.
 3. Correct env file selected.
 4. Build arguments validated (especially frontend API URL).
-5. Deploy command executed once.
-6. Smoke tests pass.
-7. If failure: rollback immediately, then analyze.
+5. On VPS, required ports are verified free before deploy.
+6. If a required port is busy, stop deployment immediately and resolve conflict first.
+7. Deploy command executed once.
+8. Smoke tests pass.
+9. If failure: rollback immediately, then analyze.
 
 ## Incident Record Format
 1. Summary
