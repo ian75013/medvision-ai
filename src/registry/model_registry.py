@@ -151,9 +151,29 @@ def load_registry(artifacts_dir: str | Path = DEFAULT_ARTIFACTS_DIR) -> Dict[str
     return registry
 
 
+def _compat_dense_from_config(cls, config):
+    """Drop legacy `quantization_config` when loading older Keras artifacts."""
+
+    cfg = dict(config)
+    cfg.pop("quantization_config", None)
+    return _ORIGINAL_DENSE_FROM_CONFIG.__func__(cls, cfg)
+
+
+_ORIGINAL_DENSE_FROM_CONFIG = tf.keras.layers.Dense.from_config
+
+
 @lru_cache(maxsize=16)
 def load_tf_model(model_path: str) -> tf.keras.Model:
-    return tf.keras.models.load_model(model_path, compile=False)
+    try:
+        return tf.keras.models.load_model(model_path, compile=False)
+    except TypeError:
+        # Keras may deserialize Dense by module path and bypass custom_objects.
+        # Patching Dense.from_config ensures legacy configs still load.
+        tf.keras.layers.Dense.from_config = classmethod(_compat_dense_from_config)
+        try:
+            return tf.keras.models.load_model(model_path, compile=False)
+        finally:
+            tf.keras.layers.Dense.from_config = _ORIGINAL_DENSE_FROM_CONFIG
 
 
 def get_model_entry(problem: str, model_name: str, artifacts_dir: str | Path = DEFAULT_ARTIFACTS_DIR) -> Dict[str, Any]:

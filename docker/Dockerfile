@@ -13,7 +13,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 COPY requirements.txt ./
 RUN sed 's#https://download.pytorch.org/whl/cu124#https://download.pytorch.org/whl/cpu#g' requirements.txt > requirements.docker.txt \
-    && pip install --no-cache-dir -r requirements.docker.txt
+    && pip install -r requirements.docker.txt
 
 COPY . .
 
