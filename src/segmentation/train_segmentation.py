@@ -35,6 +35,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import random
 from pathlib import Path
 
@@ -146,8 +147,10 @@ def main() -> None:
         tf.keras.callbacks.ReduceLROnPlateau(monitor='val_loss', factor=0.2, patience=2),
     ]
 
-    mlflow.set_tracking_uri(cfg.get('mlflow_tracking_uri', 'file:./mlruns'))
-    mlflow.set_experiment(cfg.get('project_name', 'medvision-segmentation'))
+    mlflow_tracking_uri = os.getenv('MLFLOW_TRACKING_URI', cfg.get('mlflow_tracking_uri', 'file:./mlruns'))
+    mlflow_experiment = os.getenv('MLFLOW_EXPERIMENT_NAME', cfg.get('project_name', 'medvision-segmentation'))
+    mlflow.set_tracking_uri(mlflow_tracking_uri)
+    mlflow.set_experiment(mlflow_experiment)
 
 
     # --- Training and evaluation logic ---

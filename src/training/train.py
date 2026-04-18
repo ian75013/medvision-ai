@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import random
 from pathlib import Path
 
@@ -66,8 +67,10 @@ def main() -> None:
     label_smoothing = float(config.get("label_smoothing", 0.0))
     backbone_name = args.model.lower()
 
-    mlflow.set_tracking_uri(config.get("mlflow_tracking_uri", "file:./mlruns"))
-    mlflow.set_experiment(config.get("project_name", "medvision-ai"))
+    mlflow_tracking_uri = os.getenv("MLFLOW_TRACKING_URI", config.get("mlflow_tracking_uri", "file:./mlruns"))
+    mlflow_experiment = os.getenv("MLFLOW_EXPERIMENT_NAME", config.get("project_name", "medvision-ai"))
+    mlflow.set_tracking_uri(mlflow_tracking_uri)
+    mlflow.set_experiment(mlflow_experiment)
 
     train_ds, val_ds, test_ds = build_datasets(
         dataset_dir=dataset_dir,

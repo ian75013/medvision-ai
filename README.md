@@ -195,6 +195,35 @@ python --version
 python -m pip --version
 ```
 
+## 4.b Production deployment on shared K3s
+
+For production, this repository is wired to the shared K3s cluster in the workspace rather than a standalone server deployment.
+
+- Cluster source of truth: `../k3s-fromOVHVps/deploy/platform/30-medvision.template.yaml`
+- Full bootstrap path: `../k3s-fromOVHVps/scripts/bootstrap_k3s_multi_app_platform.sh`
+- Iterative rollout path: `../k3s-fromOVHVps/scripts/build_and_push_workspace_images.sh` then `../k3s-fromOVHVps/scripts/deploy_workspace_apps_to_k3s.sh`
+- Public entrypoints: `https://app.medvision.doctumconsilium.com` and `https://api.medvision.doctumconsilium.com`
+
+Operational rule:
+
+- local Python environment and optional Docker packaging remain the development path;
+- K3s is the production path for ingress, TLS, shared operations, and multi-app hosting.
+
+### Artifact models on K3s PVC (shared API/Streamlit)
+
+Medvision now expects model artifacts to live on the shared path mounted in K3s:
+
+- `/app/artifacts/models` in `medvision-api`
+- `/app/artifacts/models` in `medvision-streamlit`
+
+To seed or update legacy local models into the K3s PVC:
+
+```bash
+bash scripts/sync_model_artifacts_to_k3s.sh
+```
+
+The script copies `artifacts/models/` from this repository into the running `medvision-api` pod, which writes to the shared PVC consumed by both API and Streamlit.
+
 ## 5. Kaggle setup
 
 1. Create an API token from your Kaggle account.
@@ -376,6 +405,22 @@ Each run typically logs:
 - segmentation overlays
 
 Tip: keep MLflow open during training to detect metric drift early.
+
+### Launch a K3s-tracked experiment (MLflow in cluster)
+
+Run one training experiment from the `medvision-api` pod and send metrics/artifacts to the in-cluster MLflow server:
+
+```bash
+POD_NAME="$(kubectl -n medvision get pod -l app=medvision-api -o jsonpath='{.items[0].metadata.name}')"
+kubectl -n medvision exec -it "$POD_NAME" -- sh -lc '
+	cd /app && \
+	MLFLOW_TRACKING_URI=http://medvision-mlflow:5000 \
+	MLFLOW_EXPERIMENT_NAME=medvision-k3s-chest-xray \
+	python -m src.training.train --config configs/config.yaml --model optimized --epochs 1
+'
+```
+
+The same `MLFLOW_TRACKING_URI` and `MLFLOW_EXPERIMENT_NAME` environment variables are supported by all training entry points in `src/training/*` and `src/segmentation/train_segmentation.py`.
 
 ## 11. DVC
 

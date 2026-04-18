@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import random
 from copy import deepcopy
 from pathlib import Path
@@ -142,8 +143,10 @@ def main():
     testing_subdir = cfg.get("testing_subdir", "Testing")
     model_dir = Path(ensure_dir(cfg.get("model_dir", "artifacts/models")))
     reports_dir = Path(ensure_dir(cfg.get("reports_dir", "artifacts/reports")))
-    mlflow.set_tracking_uri(cfg.get("mlflow_tracking_uri", "file:./mlruns"))
-    mlflow.set_experiment(cfg.get("project_name", "medvision-brain-mri"))
+    mlflow_tracking_uri = os.getenv("MLFLOW_TRACKING_URI", cfg.get("mlflow_tracking_uri", "file:./mlruns"))
+    mlflow_experiment = os.getenv("MLFLOW_EXPERIMENT_NAME", cfg.get("project_name", "medvision-brain-mri"))
+    mlflow.set_tracking_uri(mlflow_tracking_uri)
+    mlflow.set_experiment(mlflow_experiment)
 
     train_tf, eval_tf = build_transforms(image_size)
     train_full = datasets.ImageFolder(dataset_dir / training_subdir, transform=train_tf)

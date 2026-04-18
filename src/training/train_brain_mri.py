@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import random
 from pathlib import Path
 
@@ -151,8 +152,10 @@ def main() -> None:
     cm_path = Path(reports_dir) / cm_filename
     history_path = Path(reports_dir) / history_filename
 
-    mlflow.set_tracking_uri(cfg.get("mlflow_tracking_uri", "file:./mlruns"))
-    mlflow.set_experiment(cfg.get("project_name", "medvision-brain-mri"))
+    mlflow_tracking_uri = os.getenv("MLFLOW_TRACKING_URI", cfg.get("mlflow_tracking_uri", "file:./mlruns"))
+    mlflow_experiment = os.getenv("MLFLOW_EXPERIMENT_NAME", cfg.get("project_name", "medvision-brain-mri"))
+    mlflow.set_tracking_uri(mlflow_tracking_uri)
+    mlflow.set_experiment(mlflow_experiment)
 
     with mlflow.start_run(run_name=f"brain-mri-{backbone_name}"):
         mlflow.log_params(
