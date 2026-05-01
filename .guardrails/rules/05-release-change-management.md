@@ -20,6 +20,8 @@
 - Push branch before deploy (`git push`) and deploy only from remote tracked commit.
 - Verify commit parity after deploy: target runtime commit SHA must match pushed SHA.
 - Stop release immediately on failed smoke checks.
+- Critical automation (secrets rotation, registry auth, DNS sync, certificate renewal, deploy credentials) must not depend on a temporary human session token when unattended operation is expected.
+- If automation still depends on ephemeral credentials, release is NOGO until a durable credential path or equivalent autonomous mechanism is in place.
 
 ## Multi-Compose and Env Topology (Mandatory)
 
