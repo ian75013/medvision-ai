@@ -1,0 +1,29 @@
+# Antigravity IDE Workspace Configuration
+# Auto-managed by guardrails-kit
+
+project:
+  name: medvision-ai
+  root: .
+  
+workspace:
+  folders:
+    - path: .
+      name: root
+    - path: .github
+      name: github
+    - path: docs
+      name: documentation
+
+settings:
+  language: python
+  python_version: "3.11"
+  shell: bash
+  
+ai:
+  context_files:
+    - README.md
+    - ROADMAP.md
+    - INFRASTRUCTURE.md
+    - GEMINI.md
+    - CLAUDE.md
+    - .github/copilot-instructions.md

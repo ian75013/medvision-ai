@@ -654,3 +654,8 @@ python -m src.training.train_brain_mri_torch --config configs/brain_tumor_mri.ya
 ```
 
 See `docs/TRANSFER_LEARNING_GUIDE.md` for the exact rationale and comparison strategy.
+
+## How This Project Works (Operations)
+- Runtime and infra details are documented in [INFRASTRUCTURE.md](INFRASTRUCTURE.md).
+- Start from the local run section, then use the deployment section for production updates.
+- Keep changes reversible and validate health checks after rollout.

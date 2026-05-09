@@ -1,0 +1,147 @@
+\documentclass[11pt,a4paper]{article}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage[english]{babel}
+\usepackage{lmodern}
+\usepackage{microtype}
+\usepackage{geometry}
+\geometry{margin=2.5cm}
+\usepackage{hyperref}
+\hypersetup{
+    colorlinks=true,
+    linkcolor=blue!70!black,
+    urlcolor=blue!70!black,
+    citecolor=blue!70!black
+}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{enumitem}
+\usepackage{xcolor}
+\usepackage{titlesec}
+\usepackage{fancyhdr}
+\usepackage{graphicx}
+\usepackage{listings}
+
+\definecolor{codegray}{rgb}{0.95,0.95,0.95}
+\definecolor{doctum}{rgb}{0.10,0.30,0.60}
+
+\lstset{
+  backgroundcolor=\color{codegray},
+  basicstyle=\small\ttfamily,
+  breaklines=true,
+  frame=single,
+  rulecolor=\color{gray!40},
+  xleftmargin=1em,
+  framexleftmargin=0.5em
+}
+
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\textcolor{doctum}{\small\textbf{Doctum Consilium}}}
+\fancyhead[R]{\small\nouppercase{\leftmark}}
+\fancyfoot[C]{\thepage}
+
+\titleformat{\section}{\large\bfseries\color{doctum}}{}{0em}{}[\titlerule]
+\titleformat{\subsection}{\normalsize\bfseries\color{doctum!80}}{}{0em}{}
+
+
+\begin{document}
+
+\title{
+  \textcolor{doctum}{\Large\textbf{MedVision AI}} \\[0.5em]
+  \large Medical Image AI Pipeline — Brain MRI Classification and Segmentation \\[0.3em]
+  \normalsize Learning Resources and Contributor Onboarding
+}
+\author{Doctum Consilium \\ \small\textit{Generated 2026-05-08}}
+\date{}
+\maketitle
+\thispagestyle{fancy}
+
+\begin{abstract}
+This document provides a curated list of courses (Coursera, Pluralsight, A Cloud Guru),
+training repositories, and reference books to help contributors ramp up on the
+technologies used in \textbf{MedVision AI}.
+Resources are selected for quality, relevance, and practical applicability.
+\end{abstract}
+
+\tableofcontents
+\newpage
+
+\section{Prerequisites}
+Before starting the courses below, ensure you are comfortable with:
+Python, linear algebra (matrices, eigenvalues), calculus (gradients), basic statistics.
+
+\section{Coursera Courses}
+\begin{longtable}{p{6cm} p{1.5cm} p{7cm}}
+\toprule
+\textbf{Course} & \textbf{Link} & \textbf{Why relevant} \\
+\midrule
+\endhead
+  AI for Medicine Specialization & \href{https://www.coursera.org/specializations/ai-for-medicine}{\texttt{link}} & Medical image analysis, diagnostic AI, treatment effect estimation — directly applicable. \\
+  Deep Learning Specialization & \href{https://www.coursera.org/specializations/deep-learning}{\texttt{link}} & CNN architecture theory, optimisation, regularisation. \\
+  Practical Data Science on AWS & \href{https://www.coursera.org/specializations/practical-data-science}{\texttt{link}} & MLOps, experiment tracking, model deployment patterns. \\
+\bottomrule
+\caption{Coursera}
+\end{longtable}
+
+
+\section{Pluralsight Courses}
+\begin{longtable}{p{6cm} p{1.5cm} p{7cm}}
+\toprule
+\textbf{Course} & \textbf{Link} & \textbf{Why relevant} \\
+\midrule
+\endhead
+  PyTorch: Getting Started & \href{https://www.pluralsight.com/courses/pytorch-getting-started}{\texttt{link}} & Tensors, autograd, DataLoader — foundations for this project. \\
+  MLflow for ML Experiment Tracking & \href{https://www.pluralsight.com/courses/mlflow-ml-experiment-tracking}{\texttt{link}} & Direct tool match. \\
+\bottomrule
+\caption{Pluralsight}
+\end{longtable}
+
+
+\section{A Cloud Guru Courses}
+\begin{longtable}{p{6cm} p{1.5cm} p{7cm}}
+\toprule
+\textbf{Course} & \textbf{Link} & \textbf{Why relevant} \\
+\midrule
+\endhead
+  Machine Learning on AWS & \href{https://acloudguru.com/course/machine-learning-on-aws}{\texttt{link}} & SageMaker patterns for scalable model training. \\
+\bottomrule
+\caption{A Cloud Guru}
+\end{longtable}
+
+
+\section{GitHub Training Repositories}
+\begin{itemize}[leftmargin=1.5em]
+  \item \href{https://github.com/Project-MONAI/MONAI}{\textbf{Project-MONAI/MONAI}} — Medical image deep learning framework; transforms, datasets, metrics.
+  \item \href{https://github.com/mlflow/mlflow}{\textbf{mlflow/mlflow}} — Experiment tracking tool used in this project.
+  \item \href{https://github.com/iterative/dvc}{\textbf{iterative/dvc}} — Data version control; pipeline stages, remote storage.
+  \item \href{https://github.com/pytorch/vision}{\textbf{pytorch/vision}} — DenseNet, ResNet, Swin-V2 implementations.
+\end{itemize}
+
+\section{Reference Books}
+\begin{itemize}[leftmargin=1.5em]
+  \item \href{https://www.elsevier.com/books/deep-learning-for-medical-image-analysis/zhou/978-0-12-810408-8}{\textit{Deep Learning for Medical Image Analysis}} — Zhou et al.. Segmentation, classification, and detection in radiology.
+  \item \href{https://www.oreilly.com/library/view/programming-pytorch-for/9781492045342/}{\textit{Programming PyTorch for Deep Learning}} — Ian Pointer. Practical PyTorch patterns for transfer learning.
+\end{itemize}
+
+\section{Suggested Learning Path}
+\begin{enumerate}
+  \item Complete prerequisites (1--2 weeks).
+  \item Work through the Coursera specialisation most relevant to the repo's domain (4--8 weeks).
+  \item Clone the repository, read \texttt{README.md} and \texttt{INFRASTRUCTURE.md}.
+  \item Run the service locally following the \textbf{Local Run} section of \texttt{INFRASTRUCTURE.md}.
+  \item Study the Pluralsight courses for the specific tools used (2--4 weeks, parallel).
+  \item Contribute a small fix or documentation improvement as a first PR.
+  \item Study the GitHub training repositories for advanced patterns.
+\end{enumerate}
+
+\section{Free Resources}
+\begin{itemize}
+  \item \href{https://docs.python.org/3/tutorial/}{\textbf{Python Official Tutorial}} — free, authoritative.
+  \item \href{https://kubernetes.io/docs/tutorials/}{\textbf{Kubernetes Interactive Tutorials}} — browser-based k8s labs.
+  \item \href{https://fastapi.tiangolo.com/tutorial/}{\textbf{FastAPI Tutorial}} — official, comprehensive.
+  \item \href{https://pytorch.org/tutorials/}{\textbf{PyTorch Tutorials}} — official, covers all levels.
+  \item \href{https://www.deeplearning.ai/short-courses/}{\textbf{DeepLearning.AI Short Courses}} — free, recent AI topics.
+\end{itemize}
+
+\end{document}

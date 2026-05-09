@@ -1,0 +1,177 @@
+\documentclass[11pt,a4paper]{article}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage[english]{babel}
+\usepackage{lmodern}
+\usepackage{microtype}
+\usepackage{geometry}
+\geometry{margin=2.5cm}
+\usepackage{hyperref}
+\hypersetup{
+    colorlinks=true,
+    linkcolor=blue!70!black,
+    urlcolor=blue!70!black,
+    citecolor=blue!70!black
+}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{enumitem}
+\usepackage{xcolor}
+\usepackage{titlesec}
+\usepackage{fancyhdr}
+\usepackage{graphicx}
+\usepackage{listings}
+
+\definecolor{codegray}{rgb}{0.95,0.95,0.95}
+\definecolor{doctum}{rgb}{0.10,0.30,0.60}
+
+\lstset{
+  backgroundcolor=\color{codegray},
+  basicstyle=\small\ttfamily,
+  breaklines=true,
+  frame=single,
+  rulecolor=\color{gray!40},
+  xleftmargin=1em,
+  framexleftmargin=0.5em
+}
+
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\textcolor{doctum}{\small\textbf{Doctum Consilium}}}
+\fancyhead[R]{\small\nouppercase{\leftmark}}
+\fancyfoot[C]{\thepage}
+
+\titleformat{\section}{\large\bfseries\color{doctum}}{}{0em}{}[\titlerule]
+\titleformat{\subsection}{\normalsize\bfseries\color{doctum!80}}{}{0em}{}
+
+
+\begin{document}
+
+\title{
+  \textcolor{doctum}{\Large\textbf{MedVision AI}} \\[0.5em]
+  \large Medical Image AI Pipeline — Brain MRI Classification and Segmentation \\[0.3em]
+  \normalsize Technical Foundations and Architecture
+}
+\author{Doctum Consilium \\ \small\textit{Generated 2026-05-08}}
+\date{}
+\maketitle
+\thispagestyle{fancy}
+
+\begin{abstract}
+Deep learning pipeline for brain MRI analysis using transfer learning, DVC data versioning, MLflow experiment tracking, and Docker deployment.
+This document covers the theoretical foundations, architectural decisions,
+and key technical concepts required to understand, contribute to, and
+maintain this repository.
+\end{abstract}
+
+\tableofcontents
+\newpage
+
+\section{Overview}
+
+MedVision AI implements a reproducible medical image analysis pipeline that:
+\begin{enumerate}
+  \item Preprocesses and versions MRI datasets with DVC.
+  \item Trains classification and segmentation models (DenseNet121, ResNet50, Swin-V2)
+    using PyTorch with transfer learning from ImageNet weights.
+  \item Tracks experiments, metrics, and artefacts with MLflow.
+  \item Serves inference via a FastAPI REST endpoint.
+\end{enumerate}
+The pipeline targets brain tumour classification (glioma, meningioma, pituitary, no-tumour)
+and is designed for extensibility to segmentation tasks (BraTS-compatible datasets).
+
+
+\section{Architecture}
+
+\begin{verbatim}
+Raw MRI dataset (NIfTI/DICOM)
+    │
+    ▼
+DVC pipeline (preprocess → train → evaluate)
+    │                        │
+    ▼                        ▼
+Versioned artefacts     MLflow Tracking
+    │                   (metrics, params, models)
+    ▼
+FastAPI inference endpoint
+    │
+    ▼
+DICOM-SR / JSON prediction output
+\end{verbatim}
+
+
+\section{Key Technical Concepts}
+\begin{itemize}[leftmargin=1.5em]
+  \item Transfer Learning: fine-tuning ImageNet-pretrained CNNs on medical images; frozen backbone layers + trainable classification head; prevents overfitting on limited medical datasets.
+  \item DenseNet121 architecture: dense connectivity $x_l = H_l([x_0, x_1, \ldots, x_{l-1}])$; feature reuse; proven on CheXNet (chest X-ray diagnosis).
+  \item Data Augmentation: horizontal flip, rotation $\pm 10°$, colour jitter; critical for medical image generalisation given dataset scarcity.
+  \item Class Imbalance: weighted sampling, macro-F1 as primary metric rather than accuracy to avoid misleading results on imbalanced classes.
+  \item Reproducibility: DVC pins dataset versions + pipeline stages; seeds fixed across NumPy/PyTorch/CUDA for deterministic training.
+  \item MLflow: automatic logging of hyperparameters, per-epoch metrics, confusion matrices, and model artifacts for experiment comparison.
+\end{itemize}
+
+\section{Data Flow}
+
+DICOM/NIfTI → DVC preprocess stage (resize, normalise) →
+PyTorch DataLoader (augmentation) →
+Transfer learning model → loss + metrics →
+MLflow log → checkpoint save →
+FastAPI inference (\texttt{POST /predict}).
+
+
+\section{Technology Stack}
+
+\begin{tabular}{ll}
+\toprule
+\textbf{Component} & \textbf{Technology} \\
+\midrule
+Deep learning & PyTorch $\geq$ 2.0, torchvision \\
+Model zoo & DenseNet121, ResNet50, Swin-V2-S \\
+Data versioning & DVC 3.x \\
+Experiment tracking & MLflow 2.x \\
+Metrics & scikit-learn (F1, precision, recall, AUC) \\
+Serving & FastAPI \\
+\bottomrule
+\end{tabular}
+
+
+\section{Design Decisions}
+
+\begin{itemize}
+  \item DVC chosen over Git LFS for large dataset versioning with remote storage support.
+  \item Macro-F1 as primary metric: clinically relevant — all classes matter equally.
+  \item Three backbone options tested (DenseNet121, ResNet50, Swin-V2-S) to compare
+    CNN vs.\ Vision Transformer performance on the same dataset.
+\end{itemize}
+
+
+\section{Repository Structure}
+\begin{lstlisting}[language=bash,caption={Top-level directory layout}]
+medvision-ai/
+  .github/
+    copilot-instructions.md   # GitHub Copilot guardrails
+    agents/
+      ecr-secrets-agent.agent.md  # ECR secret rotation runbook
+  CLAUDE.md                   # Claude Code guardrails
+  GEMINI.md                   # Gemini CLI guardrails
+  INFRASTRUCTURE.md           # Operational runbook
+  ROADMAP.md                  # Execution log and roadmap
+  README.md                   # Project overview
+\end{lstlisting}
+
+\section{Contributing}
+\begin{enumerate}
+  \item Read \texttt{README.md}, \texttt{INFRASTRUCTURE.md}, and \texttt{ROADMAP.md} before any task.
+  \item Follow the Code Documentation Standard: every public function must have
+    a docstring (Google-style for Python, JSDoc for TypeScript, XML for C\#).
+  \item Run the guardrails validator before committing:
+    \begin{lstlisting}[language=bash]
+git add -A && ./.guardrails/bin/validate_guardrails.sh
+    \end{lstlisting}
+  \item For deployment or destructive operations, always use a named tmux session:
+    \begin{lstlisting}[language=bash]
+tmux new-session -A -s deploy-medvision-ai
+    \end{lstlisting}
+\end{enumerate}
+
+\end{document}
