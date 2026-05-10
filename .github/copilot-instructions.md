@@ -1,12 +1,17 @@
 # Copilot Instructions
 
-These rules apply to all coding tasks in medvision-ai.
+These rules are mandatory for all coding tasks in medvision-ai.
 
 ## Chat Guardrails
 - On the first chat of a session, read project documentation before any significant action (at minimum the `doc` or `docs` folder when present, plus `README.md`, `INFRASTRUCTURE.md` if present, `SKILLS.md` if present, and `ROADMAP.md` if present).
 - Read `SKILLS.md`, `ROADMAP.md`, and `INFRASTRUCTURE.md` (when present) before any substantial task.
 - Align the execution plan with the active phase in `ROADMAP.md` when it exists.
 - Apply a mandatory Plan -> Analyze -> Read relevant code -> Act workflow for any non-trivial task.
+- For any non-trivial action plan, use the standard format (`templates/ACTION_PLAN.template.md`):
+	- Sections: Objectives, Steps, Validation, Expected Results, Progress
+	- Checkmarks for traceability (✅, ⏳, ⏹️)
+	- Before/after comparison tables when applicable
+	- Clear, verified, and easy to scan
 - Before any edits, briefly summarize assumptions and verify they match observed code.
 - Provide short, actionable progress updates during execution.
 - Prefer minimal, verifiable changes.
@@ -31,10 +36,9 @@ These rules apply to all coding tasks in medvision-ai.
 - A task is done only when results are verifiable: changed files, validations run, deployment status (if requested), and rollback steps documented in ROADMAP.md.
 - Prefer deterministic actions over speculative iterations; keep changes minimal and reversible.
 
-
 ## Code Documentation Standard (Mandatory)
 - Every public function, class, and module MUST have a docstring/JSDoc/XMLDoc in the language's canonical format:
-  - Python: Google-style docstrings (Args, Returns, Raises, Example sections).
+  - Python: Google-style or NumPy-style docstrings (Args, Returns, Raises, Example sections).
   - TypeScript/JavaScript: JSDoc with `@param`, `@returns`, `@throws`, `@example`.
   - C#: XML summary with `<summary>`, `<param>`, `<returns>`, `<exception>`.
   - Shell scripts: header block with Purpose, Usage, Arguments, Exit codes.
@@ -51,15 +55,15 @@ These rules apply to all coding tasks in medvision-ai.
   3. Restart affected pods if already in `ImagePullBackOff`.
 - Document token rotation commands in `INFRASTRUCTURE.md` under the **Operations** section.
 - If a secret is accidentally committed, rotate it immediately and document the incident.
-- See `.github/agents/ecr-secrets-agent.agent.md` for the full runbook.
 
 ## Terminal Sessions (Mandatory for Critical Operations)
 - **Always use a named tmux session** for long-running, deployment, or destructive operations:
   ```bash
-  tmux new-session -A -s <task-name>   # start or reattach
-  # Naming: deploy-<service>, build-<tag>, k3s-ops, ecr-refresh
-  # Detach: Ctrl+B D  |  Reattach: tmux attach -t <task-name>
+  # Start / reattach
+  tmux new-session -A -s <task-name>
+  # Detach safely: Ctrl+B D
+  # Reattach: tmux attach -t <task-name>
   ```
+- Naming convention: `deploy-<service>`, `build-<tag>`, `k3s-ops`, `ecr-refresh`.
 - This prevents work loss on SSH disconnection and provides a recoverable audit trail.
 - On Windows (PowerShell): use Windows Terminal tabs or `Start-Process` with logging to a file as equivalent.
-- On macOS: same tmux convention (iTerm2 or Terminal).

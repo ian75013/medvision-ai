@@ -3,14 +3,11 @@
 This file defines Claude Code execution rules for `medvision-ai`.
 
 ## Mandatory Sources of Truth
-- `README.md`
-- `INFRASTRUCTURE.md` (if present)
+- `README.md` (MANDATORY: Must exist, create if missing)
+- `INFRASTRUCTURE.md` (MANDATORY: Must exist, create if missing)
 - `SKILLS.md` (if present)
-- `ROADMAP.md` (if present)
+- `ROADMAP.md` (MANDATORY: Must exist, create if missing)
 - `.github/copilot-instructions.md`
-
-## Project Context
-medvision-ai — medical image AI pipeline (DVC, Python, Docker)
 
 ## Execution Principles
 1. Read sources of truth before any non-trivial task.
@@ -18,6 +15,7 @@ medvision-ai — medical image AI pipeline (DVC, Python, Docker)
 3. Fix root causes before any workaround.
 4. Keep changes minimal, targeted, and verifiable.
 5. Update documentation when behavior changes.
+6. MISSING CORE DOCUMENTS: If README.md, INFRASTRUCTURE.md, or ROADMAP.md are missing, your VERY FIRST task is to create them before writing any code.
 
 ## Code Documentation Standard (Mandatory)
 - Every public function, class, and module MUST have a docstring in the language's canonical format:
@@ -43,13 +41,18 @@ medvision-ai — medical image AI pipeline (DVC, Python, Docker)
   # Naming: deploy-<service>, build-<tag>, k3s-ops, ecr-refresh
   ```
 - On Windows: use Windows Terminal tabs or Start-Process with file logging.
-- On macOS: same tmux convention applies.
 
 ## Environment Policy
 - Use a single standard environment per repo when possible.
+- Use GPU if available and compatible; otherwise CPU in the same environment.
 - Parallel environments allowed only if technically unavoidable — document reason, limits, naming, activation.
 
 ## Platform Compatibility
 - Critical automation scripts must provide Ubuntu (Bash) and Windows (PowerShell) execution.
-- macOS (zsh/bash) compatibility required when using POSIX-standard commands.
+- macOS (zsh/bash) compatibility is required when the script uses only POSIX-standard commands.
 - Any exception must be documented with an operational alternative.
+
+## Hooks (if present)
+- Preflight: `.claude/hooks/preflight.ps1` and `.claude/hooks/preflight.sh`
+- Post-task check: `.claude/hooks/post-task.ps1` and `.claude/hooks/post-task.sh`
+- Usage details: `.claude/hooks/README.md`
