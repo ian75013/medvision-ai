@@ -64,19 +64,55 @@ class _FakeSession:
     """Session ONNX factice exposant les deux têtes du U-Net."""
 
     def __init__(self, outputs: dict[str, np.ndarray]) -> None:
+        """Mémorise les sorties que la session est censée produire.
+
+        Args:
+            outputs: Table nom de sortie → tableau. L'ordre des clés fait foi : c'est lui
+                qui relie ``get_outputs()`` aux valeurs rendues par ``run()``, exactement
+                comme le fait ONNX Runtime.
+        """
         self._outputs = outputs
 
     def get_inputs(self):
+        """Décrit l'unique entrée, au format d'une session ONNX de segmentation.
+
+        Returns:
+            Une liste d'un élément, avec ``name`` et ``shape`` — les deux seuls attributs
+            que le code appelant consulte.
+        """
         return [SimpleNamespace(name="input", shape=[1, 256, 256, 3])]
 
     def get_outputs(self):
+        """Décrit les sorties par leur nom.
+
+        Returns:
+            Un objet par sortie, portant son ``name``. Ces noms sont ce qui permet au code
+            de production de retrouver la tête de segmentation sans dépendre de l'ordre.
+        """
         return [SimpleNamespace(name=n) for n in self._outputs]
 
     def run(self, _names, _feed):
+        """Rend les sorties préparées, sans regarder l'entrée.
+
+        Args:
+            _names: Noms demandés — ignorés, la doublure rend toujours tout.
+            _feed: Dictionnaire d'entrée — ignoré.
+
+        Returns:
+            Les tableaux de sortie, dans l'ordre des clés.
+        """
         return list(self._outputs.values())
 
 
 def _png(size: int = 64) -> bytes:
+    """Fabrique un PNG uni en mémoire, à téléverser dans les tests d'API.
+
+    Args:
+        size: Côté de l'image, en pixels.
+
+    Returns:
+        Le contenu binaire du PNG.
+    """
     buffer = io.BytesIO()
     Image.new("RGB", (size, size), color=(80, 90, 100)).save(buffer, format="PNG")
     return buffer.getvalue()

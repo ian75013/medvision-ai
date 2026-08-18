@@ -116,6 +116,11 @@ class _FakeBase:
     """
 
     def __init__(self, input_tensor) -> None:
+        """Branche une convolution 1×1 en guise de sortie de dos.
+
+        Args:
+            input_tensor: Tenseur d'entrée du modèle, sur lequel greffer le faux dos.
+        """
         self.output = tf.keras.layers.Conv2D(2, 1)(input_tensor)
         self.trainable = True
 

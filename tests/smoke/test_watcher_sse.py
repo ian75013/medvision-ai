@@ -78,15 +78,42 @@ class _FakeS3:
     """Faux client S3 : ETag contrôlé par le test, download traçable."""
 
     def __init__(self) -> None:
+        """Démarre sans manifeste publié et sans téléchargement enregistré.
+
+        Le test pilote la veille en posant ``etag`` : ``None`` simule un manifeste absent,
+        une nouvelle valeur simule une publication.
+        """
         self.etag: str | None = None
         self.downloads: list[tuple[str, str, str]] = []
 
     def head_object(self, Bucket: str, Key: str):  # noqa: N803 — API boto3
+        """Rend l'ETag courant, ou simule l'absence de l'objet.
+
+        Args:
+            Bucket: Nom du bucket (ignoré ; la signature suit celle de boto3).
+            Key: Clé de l'objet (ignorée).
+
+        Returns:
+            ``{"ETag": ...}`` quand un manifeste est publié.
+
+        Raises:
+            RuntimeError: Message contenant « 404 », comme le ferait boto3 sur un objet
+                absent — c'est ce cas que le watcher doit traiter comme « rien de nouveau »
+                plutôt que comme une panne.
+        """
         if self.etag is None:
             raise RuntimeError("404 Not Found")
         return {"ETag": self.etag}
 
     def download_file(self, bucket: str, key: str, dest: str) -> None:
+        """Enregistre l'appel et écrit un fichier factice à destination.
+
+        Args:
+            bucket: Bucket source.
+            key: Clé source.
+            dest: Chemin local. Le contenu écrit importe peu ; ce qui compte est que le
+                fichier existe pour la suite du parcours.
+        """
         self.downloads.append((bucket, key, dest))
         Path(dest).write_text("locked")
 
@@ -126,6 +153,12 @@ async def test_watcher_pulls_on_new_etag_and_broadcasts(tmp_path: Path, monkeypa
     pulls: list[str] = []
 
     async def fake_pull() -> None:
+        """Remplace le vrai ``dvc pull`` : trace l'appel et matérialise un modèle.
+
+        Écrire réellement le ``.onnx`` est indispensable : c'est ce qui fait passer une
+        entrée du registre de « indisponible » à « disponible », donc ce qui doit déclencher
+        l'événement ``newly_available`` que le test attend.
+        """
         pulls.append("pull")
         # Le pull matérialise un nouveau modèle → newly_available non vide.
         (tmp_path / "models").mkdir(exist_ok=True)

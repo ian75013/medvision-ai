@@ -24,6 +24,16 @@ from src.registry.model_registry import ModelNotFoundError
 
 
 def _write_png(path: Path, size: int = 24) -> Path:
+    """Écrit un PNG uni sur le disque, dossiers parents compris.
+
+    Args:
+        path: Chemin du fichier à créer.
+        size: Côté de l'image, en pixels. Minuscule par défaut : ces tests doivent rester
+            rapides sur les runners modestes de la CI.
+
+    Returns:
+        Le chemin écrit, pour permettre l'enchaînement.
+    """
     path.parent.mkdir(parents=True, exist_ok=True)
     Image.new("RGB", (size, size), color=(40, 80, 120)).save(path)
     return path
@@ -59,17 +69,48 @@ class _FakeSession:
     def __init__(
         self, outputs: dict[str, np.ndarray], input_shape: list | None = None
     ) -> None:
+        """Prépare les sorties à rejouer et la forme d'entrée à déclarer.
+
+        Args:
+            outputs: Sorties simulées, par nom.
+            input_shape: Forme d'entrée annoncée. NHWC par défaut (export TensorFlow) ;
+                passer ``[1, 3, H, W]`` simule un export PyTorch, ce qui doit déclencher la
+                transposition côté API.
+        """
         self._outputs = outputs
         self._input_shape = input_shape or [1, 224, 224, 3]
         self.received_feeds: list[dict] = []
 
     def get_inputs(self):
+        """Déclare l'entrée et sa forme — c'est elle qui décide de la transposition.
+
+        Returns:
+            Une liste d'un objet portant ``name`` et ``shape``.
+        """
         return [SimpleNamespace(name="input", shape=self._input_shape)]
 
     def get_outputs(self):
+        """Déclare les sorties par leur nom, dans l'ordre des clés fournies.
+
+        Returns:
+            Un objet par sortie, portant son ``name``.
+        """
         return [SimpleNamespace(name=name) for name in self._outputs]
 
     def run(self, _names, feed):
+        """Enregistre l'entrée reçue puis rend les sorties préparées.
+
+        Conserver ``feed`` est le cœur du dispositif : c'est ce qui permet aux tests de
+        vérifier **ce que l'API a réellement envoyé au modèle**, notamment la disposition
+        des canaux après transposition.
+
+        Args:
+            _names: Noms de sorties demandés — ignorés.
+            feed: Dictionnaire d'entrée, conservé dans ``received_feeds``.
+
+        Returns:
+            Les tableaux de sortie, dans l'ordre des clés.
+        """
         self.received_feeds.append(feed)
         return list(self._outputs.values())
 
@@ -82,6 +123,18 @@ def _patch_session(monkeypatch, outputs: dict[str, np.ndarray]) -> None:
     """
 
     def _fake(path: str):
+        """Rend une fausse session, mais lève d'abord si le fichier n'existe pas.
+
+        Args:
+            path: Chemin du ``.onnx`` demandé.
+
+        Returns:
+            La session factice.
+
+        Raises:
+            ModelNotFoundError: Le fichier est absent — c'est ce cas qui alimente l'erreur
+                par modèle dans la réponse multi-modèles.
+        """
         if not Path(path).exists():
             raise ModelNotFoundError(f"{Path(path).name} introuvable.")
         return _FakeSession(outputs)
@@ -180,6 +233,14 @@ def test_api_images_label_filter(app_env) -> None:
 
 
 def _png_bytes(size: int = 32) -> bytes:
+    """Fabrique un PNG uni en mémoire, à téléverser dans les tests de prédiction.
+
+    Args:
+        size: Côté de l'image, en pixels.
+
+    Returns:
+        Le contenu binaire du PNG.
+    """
     buffer = io.BytesIO()
     Image.new("RGB", (size, size), color=(200, 100, 50)).save(buffer, format="PNG")
     return buffer.getvalue()
@@ -321,6 +382,17 @@ def test_api_predict_transposes_for_torch_models(app_env, monkeypatch) -> None:
     )
 
     def _fake(path: str):
+        """Rend **la** session préparée par ce test, afin d'inspecter ensuite ses entrées.
+
+        Args:
+            path: Chemin du ``.onnx`` demandé.
+
+        Returns:
+            La session déclarée en NCHW.
+
+        Raises:
+            ModelNotFoundError: Le fichier est absent.
+        """
         if not Path(path).exists():
             raise ModelNotFoundError(f"{Path(path).name} introuvable.")
         return session
