@@ -1,3 +1,26 @@
+"""Interface Streamlit de MedVision-AI : choisir un modèle, une image, comparer.
+
+C'est l'UI historique du projet, servie en production à côté de l'API FastAPI (que
+consomme le front Angular). Les deux montrent les **mêmes** échantillons parce qu'elles
+partagent le même module de découverte d'images
+(:mod:`src.datasets.sample_browser`) — c'est délibéré : deux navigateurs divergents
+donneraient deux applications qui ne parlent pas du même dataset.
+
+Ce que la page permet : parcourir les images d'un problème avec filtres par classe, choisir
+un modèle du registre, lancer une prédiction, et comparer les métriques des modèles
+disponibles.
+
+Points structurants, à connaître avant d'y toucher :
+
+* **L'inférence passe par ONNX Runtime** (``session.run``), jamais par Keras ni PyTorch :
+  ceux-ci ne sont pas installés dans l'image de production.
+* **La taille d'entrée dépend du problème** — 256 pour la segmentation, 224 pour la
+  classification — et doit correspondre à celle vue à l'entraînement.
+* **Streamlit réexécute tout le script à chaque interaction.** Ce qui doit survivre à une
+  interaction passe par ``st.session_state`` ; ce qui coûte cher (chargement de modèle,
+  balayage des dossiers) doit rester mis en cache.
+"""
+
 from __future__ import annotations
 
 import tempfile
@@ -42,6 +65,23 @@ def _load_preview_image(path: Path) -> np.ndarray | None:
 
 
 def _render_fixed_label_filters(problem: str, labels: list[str]) -> list[str]:
+    """Affiche les cases à cocher de filtrage par classe et renvoie la sélection.
+
+    La sélection est mémorisée dans ``st.session_state`` sous une clé propre au problème :
+    changer de problème ne doit pas hériter des filtres du précédent, dont les classes n'ont
+    rien à voir.
+
+    La sélection sauvegardée est **intersectée** avec les classes réellement disponibles,
+    et une intersection vide retombe sur « tout sélectionné ». Sans cela, un dataset dont
+    les classes ont changé afficherait une liste vide sans explication.
+
+    Args:
+        problem: Identifiant du problème, qui isole l'état.
+        labels: Classes disponibles pour ce problème.
+
+    Returns:
+        Les classes retenues, dans l'ordre de ``labels``.
+    """
     state_key = f"label_filters_{problem}"
     saved = st.session_state.get(state_key)
 
@@ -113,6 +153,36 @@ def _run_onnx(session: Any, image: np.ndarray) -> dict[str, np.ndarray]:
 
 
 def _predict(problem: str, model_name: str, image_path: Path, mask_threshold: float = 0.5) -> dict:
+    """Exécute une prédiction ONNX et normalise le résultat pour l'affichage.
+
+    Trois formes de sortie sont produites selon ``task_type`` :
+
+    * **segmentation** — masque de probabilités, masque binarisé et statistiques
+      (proportion de premier plan, min/moyenne/max), plus l'image pré-traitée pour la
+      superposition. La tête de classification du U-Net est **volontairement ignorée** :
+      elle annonçait « NORMAL » à 1.000 sur des pneumonies manifestes (incident du
+      2026-07-18). Un second avis, quand il est nécessaire, vient d'un classifieur dédié.
+    * **binary** — le modèle sort une seule probabilité, celle de la classe positive ; la
+      probabilité de la classe négative est son complément.
+    * **multiclass** — un vecteur de probabilités, associé aux noms de classes du registre.
+
+    La sortie de segmentation est retrouvée par son **nom** (celui qui contient « seg »),
+    car tf2onnx préserve les noms de couches Keras ; à défaut, on prend la première sortie.
+
+    Args:
+        problem: Identifiant du problème.
+        model_name: Identifiant du modèle dans le registre.
+        image_path: Image à analyser.
+        mask_threshold: Seuil de binarisation du masque, en segmentation seulement.
+
+    Returns:
+        Un dictionnaire dont les clés dépendent du type de tâche (voir ci-dessus). Les
+        métriques du modèle y sont toujours jointes, pour être affichées avec le résultat.
+
+    Raises:
+        ModelNotFoundError: Le fichier ``.onnx`` n'est pas sur le disque — le ``dvc pull``
+            du démarrage n'a probablement pas abouti.
+    """
     model_entry = get_model_entry(problem, model_name)
     session = load_onnx_model(str(Path(model_entry["model_path"]).resolve()))
 
@@ -155,6 +225,12 @@ def _predict(problem: str, model_name: str, image_path: Path, mask_threshold: fl
 
 
 def _inject_styles() -> None:
+    """Injecte la feuille de style de la page.
+
+    Streamlit n'offre pas de thème assez fin pour cette mise en page (cartes de KPI, bandeau
+    d'en-tête) : on passe donc par un bloc ``<style>`` en Markdown brut. Appelée une fois,
+    juste après ``set_page_config``, avant tout rendu.
+    """
     st.markdown(
         """
 <style>
@@ -246,6 +322,20 @@ def _inject_styles() -> None:
 
 
 def _blend_overlay(image: np.ndarray, mask: np.ndarray) -> np.ndarray:
+    """Superpose le masque à l'image en vert, sans masquer l'anatomie dessous.
+
+    Plutôt qu'un aplat opaque, le vert est **poussé** là où le masque est actif et les
+    canaux rouge et bleu sont légèrement atténués. La texture de l'image reste donc lisible
+    au travers de la zone segmentée — c'est précisément ce qu'on veut juger sur une image
+    médicale.
+
+    Args:
+        image: Image pré-traitée ``(H, W, 3)``, valeurs dans [0, 1].
+        mask: Masque ``(H, W)``, binaire ou continu dans [0, 1].
+
+    Returns:
+        L'image superposée, même forme, valeurs dans [0, 1]. L'entrée n'est pas modifiée.
+    """
     overlay = np.clip(image.copy(), 0.0, 1.0)
     alpha = np.clip(mask, 0.0, 1.0) * 0.7
     overlay[..., 1] = np.maximum(overlay[..., 1], alpha)
@@ -255,6 +345,17 @@ def _blend_overlay(image: np.ndarray, mask: np.ndarray) -> np.ndarray:
 
 
 def _render_kpi(label: str, value: str) -> None:
+    """Affiche une carte de KPI — un intitulé et sa valeur.
+
+    Args:
+        label: Intitulé de l'indicateur.
+        value: Valeur déjà formatée en chaîne (pourcentage, score, effectif).
+
+    Note:
+        Le HTML est rendu tel quel (``unsafe_allow_html``). Ne passer ici que des valeurs
+        produites par l'application — jamais du texte fourni par un utilisateur, qui
+        pourrait injecter du balisage dans la page.
+    """
     st.markdown(
         f"""
 <div class="kpi-card">

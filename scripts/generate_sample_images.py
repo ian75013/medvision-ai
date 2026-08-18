@@ -39,6 +39,19 @@ def _save_synthetic_image(path: Path, rng: np.random.Generator, patch_value: int
 
 
 def _generate_chest_xray(out_dir: Path, rng: np.random.Generator) -> None:
+    """Écrit les images synthétiques du problème « radiographie thoracique ».
+
+    Les deux classes se distinguent par la luminosité du carré central (80 contre 180) :
+    un modèle réel n'y verrait rien de médical, mais l'UI a de quoi afficher deux classes
+    visuellement différentes.
+
+    L'arborescence reproduit celle du vrai dataset (``chest_xray/test/<CLASSE>/``), sans
+    quoi le navigateur d'images ne les trouverait pas.
+
+    Args:
+        out_dir: Racine des données brutes.
+        rng: Générateur aléatoire, pour que la sortie soit reproductible.
+    """
     classes = {"NORMAL": 80, "PNEUMONIA": 180}
     for class_name, patch_val in classes.items():
         folder = out_dir / "chest_xray" / "test" / class_name
@@ -49,6 +62,15 @@ def _generate_chest_xray(out_dir: Path, rng: np.random.Generator) -> None:
 
 
 def _generate_brain_mri(out_dir: Path, rng: np.random.Generator) -> None:
+    """Écrit les images synthétiques du problème « IRM cérébrale », quatre classes.
+
+    Les noms de classes et le dossier ``Testing/`` reprennent exactement ceux du dataset
+    Kaggle : l'UI et le registre s'appuient dessus.
+
+    Args:
+        out_dir: Racine des données brutes.
+        rng: Générateur aléatoire.
+    """
     classes = {
         "glioma": 210,
         "meningioma": 170,
@@ -64,9 +86,20 @@ def _generate_brain_mri(out_dir: Path, rng: np.random.Generator) -> None:
 
 
 def _generate_brain_tumor_segmentation(out_dir: Path, rng: np.random.Generator) -> None:
-    """
-    The segmentation app reads from a manifest CSV.
-    We create a minimal manifest pointing to synthetic images.
+    """Écrit les images de segmentation **et** le manifeste minimal qui les référence.
+
+    Le navigateur d'images de la segmentation ne lit pas un dossier mais un
+    ``manifest.csv`` : générer les seules images ne suffirait pas à rendre le problème
+    visible dans l'UI. Le manifeste est écrit dans ``data/processed/`` — à l'endroit où la
+    vraie préparation le poserait.
+
+    Ce manifeste de démonstration n'a **pas** de colonne ``mask_path`` : il suffit à
+    l'affichage, pas à un entraînement, qui exige le manifeste complet produit par
+    :func:`src.segmentation.datasets.manifest.build_manifest`.
+
+    Args:
+        out_dir: Racine des données brutes.
+        rng: Générateur aléatoire.
     """
     import csv
 
@@ -95,6 +128,14 @@ def _generate_brain_tumor_segmentation(out_dir: Path, rng: np.random.Generator) 
 
 
 def main() -> None:
+    """Génère les images synthétiques des trois problèmes sous ``--out-dir``.
+
+    Un seul générateur aléatoire, créé à partir de ``--seed``, est passé aux trois
+    fonctions : relancer le script avec la même graine réécrit exactement les mêmes images.
+
+    Rappelle en fin d'exécution que ces données sont synthétiques et donne la commande pour
+    récupérer les vraies.
+    """
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--out-dir", type=Path, default=Path("data/raw"))
     parser.add_argument("--seed", type=int, default=42)

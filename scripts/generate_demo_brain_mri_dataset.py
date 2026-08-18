@@ -1,3 +1,24 @@
+"""Génère un dataset d'IRM cérébrales **synthétique** : volumes, métadonnées et découpage.
+
+Usage:
+    python scripts/generate_demo_brain_mri_dataset.py
+    python scripts/generate_demo_brain_mri_dataset.py --num-patients-per-class 30
+
+POURQUOI ce script existe : il permet de dérouler toute la chaîne volumétrique — lecture
+NIfTI/NumPy, découpage par patient, extraction de coupes, entraînement PyTorch — sans
+télécharger un dataset médical de plusieurs gigaoctets, et sans manipuler de données de
+patients réels. C'est aussi ce qui rend la chaîne testable en intégration continue.
+
+Ce qu'il produit : des volumes de bruit avec une ellipse « cérébrale » plus lumineuse et,
+pour la classe 1, une sphère « tumorale » plus lumineuse encore. Un modèle apprend cette
+tâche trivialement — **aucun score obtenu sur ces données n'a de sens**. La question à
+laquelle ils répondent est « le pipeline tourne-t-il de bout en bout ? », pas « le modèle
+est-il bon ? ».
+
+Le découpage est délégué à :func:`src.datasets.splitters.create_patient_level_splits`, donc
+par patient — même sur des données jouets, on ne s'entraîne pas à faire fuiter.
+"""
+
 from __future__ import annotations
 
 import argparse
@@ -12,6 +33,26 @@ from src.utils.seed import set_seed
 
 
 def make_synthetic_volume(label: int, shape: tuple[int, int, int] = (96, 96, 24)) -> np.ndarray:
+    """Fabrique un volume 3D de bruit contenant une forme « cérébrale », et une tumeur si besoin.
+
+    Construction : un fond gaussien, une ellipse plus lumineuse étendue sur toute la
+    profondeur (le « cerveau »), puis — pour ``label == 1`` — une sphère plus lumineuse
+    décentrée (la « tumeur »). Les valeurs sont bornées à [-1.5, 2.5] pour rester dans une
+    plage plausible après normalisation.
+
+    Args:
+        label: 0 pour un volume sain, 1 pour un volume porteur d'une lésion.
+        shape: Dimensions ``(H, W, D)`` du volume.
+
+    Returns:
+        Le volume, tableau ``float32`` de la forme demandée.
+
+    Note:
+        Le générateur aléatoire est créé **à chaque appel** sans graine, ce qui rend le
+        bruit non reproductible même après ``set_seed`` — les volumes diffèrent d'une
+        exécution à l'autre. Sans conséquence sur des données jouets, mais à savoir avant
+        de vouloir comparer deux exécutions à l'octet près.
+    """
     rng = np.random.default_rng()
     volume = rng.normal(loc=0.0, scale=0.2, size=shape).astype(np.float32)
 
@@ -31,6 +72,17 @@ def make_synthetic_volume(label: int, shape: tuple[int, int, int] = (96, 96, 24)
 
 
 def main() -> None:
+    """Écrit les volumes, le CSV de métadonnées et les fichiers de découpage.
+
+    Produit ``--num-patients-per-class`` volumes par classe (sain / tumeur) sous
+    ``--output-dir``, un ``metadata.csv`` avec ``patient_id``, ``path`` et ``label``, puis
+    délègue le découpage train/val/test à
+    :func:`src.datasets.splitters.create_patient_level_splits`, qui écrit ses CSV sous
+    ``--processed-dir``.
+
+    Ces chemins sont ceux qu'attendent les configs de démonstration : les changer oblige à
+    changer la config d'entraînement en conséquence.
+    """
     parser = argparse.ArgumentParser(description="Generate a synthetic brain MRI dataset for Sprint 2 demo")
     parser.add_argument("--output-dir", type=Path, default=Path("data/raw/brain_mri_demo"))
     parser.add_argument("--num-patients-per-class", type=int, default=12)
