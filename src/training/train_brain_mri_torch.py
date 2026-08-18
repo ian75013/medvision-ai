@@ -1,3 +1,29 @@
+"""Classification d'IRM cérébrales en PyTorch — variante torchvision de ``train_brain_mri``.
+
+POURQUOI une seconde implémentation de la même tâche : elle donne accès à des
+architectures que Keras n'expose pas (notamment les Swin Transformers) et sert de contrôle
+croisé — deux piles indépendantes qui convergent vers les mêmes scores rassurent bien plus
+qu'une seule. Les deux produisent, après conversion ONNX, un modèle servable de la même
+façon.
+
+Usage:
+    python -m src.training.train_brain_mri_torch --config configs/brain_mri.yaml
+    python -m src.training.train_brain_mri_torch --config configs/brain_mri.yaml --model swin_v2_s_torch
+
+Deux points de vigilance, propres à cette voie :
+
+* **Le modèle retenu est celui du meilleur F1 macro de validation**, conservé en mémoire
+  (``deepcopy``) et rechargé avant le test. PyTorch n'a pas d'équivalent de
+  ``restore_best_weights`` : sans cette copie, on évaluerait la dernière époque, qui est
+  rarement la meilleure.
+* **Le F1 macro, et non l'exactitude, arbitre**. Sur quatre classes déséquilibrées,
+  l'exactitude suit la classe majoritaire ; le F1 macro traite les quatre à égalité.
+
+Le point de contrôle sauvegardé embarque les classes, le nom du modèle et la taille
+d'image en plus des poids : un ``.pt`` nu ne dit pas dans quel ordre lire ses sorties, et
+c'est exactement ce dont on a besoin des mois plus tard pour le convertir en ONNX.
+"""
+
 from __future__ import annotations
 
 import argparse
@@ -21,6 +47,11 @@ from src.utils.paths import ensure_dir
 
 
 def set_seed(seed: int) -> None:
+    """Fixe la graine de Python, NumPy et PyTorch (CPU et tous les GPU).
+
+    Args:
+        seed: Graine commune.
+    """
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
@@ -28,6 +59,12 @@ def set_seed(seed: int) -> None:
 
 
 def parse_args() -> argparse.Namespace:
+    """Déclare et lit les arguments de la ligne de commande.
+
+    Returns:
+        Les arguments analysés : ``config`` (YAML, obligatoire), ``model`` parmi les trois
+        dos torchvision câblés dans :func:`build_model`, et ``epochs`` (facultatif).
+    """
     parser = argparse.ArgumentParser(description="PyTorch transfer learning for brain MRI classification")
     parser.add_argument("--config", required=True)
     parser.add_argument("--model", default="densenet121_torch", choices=["densenet121_torch", "resnet50_torch", "swin_v2_s_torch"])
@@ -36,6 +73,23 @@ def parse_args() -> argparse.Namespace:
 
 
 def build_transforms(image_size: int):
+    """Compose les transformations d'entrée : une pour l'entraînement, une pour l'évaluation.
+
+    L'augmentation (miroir, rotation ≤ 10°, légère variation de luminosité et de contraste)
+    ne s'applique **qu'à l'entraînement**. L'appliquer aussi en évaluation rendrait les
+    scores bruités et non reproductibles. Les amplitudes restent faibles : une IRM
+    cérébrale a une orientation anatomique, et une rotation franche fabriquerait une image
+    qui n'existe pas en clinique.
+
+    La normalisation utilise les moyennes et écarts-types d'ImageNet, parce que les dos sont
+    pré-entraînés dessus — s'en écarter décale les activations dès la première couche.
+
+    Args:
+        image_size: Côté du carré cible, en pixels.
+
+    Returns:
+        Le couple ``(transformations d'entraînement, transformations d'évaluation)``.
+    """
     train_tf = transforms.Compose([
         transforms.Resize((image_size, image_size)),
         transforms.RandomHorizontalFlip(),
@@ -53,6 +107,26 @@ def build_transforms(image_size: int):
 
 
 def build_model(model_name: str, num_classes: int):
+    """Charge un dos torchvision pré-entraîné, remplace sa tête, et gèle tout le reste.
+
+    Chaque architecture nomme sa tête différemment — ``classifier`` chez DenseNet, ``fc``
+    chez ResNet, ``head`` chez Swin — d'où les trois branches. La tête d'origine prédit les
+    1000 classes d'ImageNet ; on la remplace par une couche linéaire aux dimensions du
+    problème, seule partie initialisée au hasard.
+
+    Le gel est ensuite général puis relâché sur la seule tête : c'est l'état de départ de
+    la phase de chauffe (voir la note de :mod:`src.training.transfer_utils`, le raisonnement
+    est le même ici).
+
+    Args:
+        model_name: ``densenet121_torch``, ``resnet50_torch`` ou ``swin_v2_s_torch``.
+            Toute autre valeur retombe sur le Swin — les choix sont contraints en amont par
+            ``argparse``.
+        num_classes: Nombre de classes de sortie.
+
+    Returns:
+        Le modèle prêt pour la chauffe : dos gelé, tête entraînable.
+    """
     if model_name == "densenet121_torch":
         weights = models.DenseNet121_Weights.DEFAULT
         model = models.densenet121(weights=weights)
@@ -78,6 +152,21 @@ def build_model(model_name: str, num_classes: int):
 
 
 def unfreeze_last_layers(model: nn.Module, model_name: str, unfreeze_blocks: int = 2):
+    """Rend entraînables les derniers blocs du dos, pour la phase d'affinage.
+
+    On dégèle par **bloc** et non par couche : dans ces architectures, un bloc est l'unité
+    cohérente (convolutions, normalisation et connexion résiduelle), et n'en dégeler qu'une
+    partie déséquilibre l'apprentissage.
+
+    Chez ResNet, on écarte le dernier enfant du module — c'est la tête, déjà dégelée par
+    :func:`build_model`.
+
+    Args:
+        model: Modèle renvoyé par :func:`build_model`.
+        model_name: Nom de l'architecture, qui détermine où trouver les blocs.
+        unfreeze_blocks: Nombre de blocs terminaux à dégeler. Au-delà de 3, sur un petit
+            dataset médical, le sur-apprentissage l'emporte.
+    """
     if model_name == "densenet121_torch":
         modules = list(model.features.children())
     elif model_name == "resnet50_torch":
@@ -90,6 +179,22 @@ def unfreeze_last_layers(model: nn.Module, model_name: str, unfreeze_blocks: int
 
 
 def evaluate(model, loader, device):
+    """Évalue le modèle sur un chargeur et renvoie les quatre métriques macro.
+
+    ``model.eval()`` et ``torch.no_grad()`` sont tous deux nécessaires et ne font pas la
+    même chose : le premier bascule dropout et batch-norm en mode inférence, le second
+    empêche la construction du graphe de gradients. Oublier le premier fausse les
+    résultats ; oublier le second fait exploser la mémoire.
+
+    Args:
+        model: Modèle à évaluer.
+        loader: Chargeur produisant des couples ``(images, labels)``.
+        device: Périphérique de calcul.
+
+    Returns:
+        Dictionnaire ``accuracy``, ``precision_macro``, ``recall_macro``, ``f1_macro``. Les
+        moyennes sont macro : chaque classe pèse autant, quelle que soit sa fréquence.
+    """
     model.eval()
     all_y, all_p = [], []
     with torch.no_grad():
@@ -108,6 +213,21 @@ def evaluate(model, loader, device):
 
 
 def train_epoch(model, loader, optimizer, criterion, device):
+    """Fait une passe d'entraînement complète et renvoie la perte moyenne par exemple.
+
+    La perte est pondérée par la taille réelle du lot avant d'être moyennée : un dernier
+    lot incomplet ne doit pas peser autant qu'un lot plein.
+
+    Args:
+        model: Modèle à entraîner.
+        loader: Chargeur d'entraînement.
+        optimizer: Optimiseur, construit sur les seuls paramètres entraînables.
+        criterion: Fonction de perte, appliquée aux logits.
+        device: Périphérique de calcul.
+
+    Returns:
+        La perte moyenne par exemple sur l'époque.
+    """
     model.train()
     running_loss = 0.0
     count = 0
@@ -126,6 +246,23 @@ def train_epoch(model, loader, optimizer, criterion, device):
 
 
 def main():
+    """Exécute l'entraînement PyTorch de bout en bout, de la config aux artefacts.
+
+    Déroulé : config et graines → transformations → jeux ``ImageFolder`` → découpage
+    validation → chauffe (tête seule) → affinage (derniers blocs dégelés) → rechargement
+    des meilleurs poids → évaluation sur le test → écriture du point de contrôle, des
+    métriques et de l'historique, puis journalisation MLflow.
+
+    Deux détails qui évitent des erreurs silencieuses :
+
+    * le dossier d'entraînement est ouvert **deux fois**, une fois avec les transformations
+      d'entraînement et une fois avec celles d'évaluation, avant d'être découpé par
+      indices. Sans cela, le sous-ensemble de validation hériterait de l'augmentation
+      aléatoire et ses scores danseraient d'une époque à l'autre ;
+    * l'optimiseur est reconstruit après le dégel, sur les paramètres redevenus
+      entraînables. Réutiliser l'ancien laisserait les blocs fraîchement dégelés hors de
+      son champ, et l'affinage n'affinerait rien.
+    """
     args = parse_args()
     cfg = load_config(args.config)
     seed = int(cfg.get("seed", 42))

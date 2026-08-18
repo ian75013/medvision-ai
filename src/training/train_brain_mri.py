@@ -1,3 +1,25 @@
+"""Entraînement du classifieur multi-classes d'IRM cérébrales (types de tumeurs).
+
+Point d'entrée du stage DVC ``train_brain_mri``. Même structure que
+:mod:`src.training.train` — config YAML, transfert progressif, artefacts préfixés par le
+nom du dos, journalisation MLflow — mais sur un problème à **plusieurs classes** (gliome,
+méningiome, hypophysaire, absence de tumeur), ce qui change trois choses :
+
+* les métriques sont macro-moyennées (:mod:`src.evaluation.metrics_multiclass`) et non
+  binaires : une classe rare doit peser autant qu'une classe fréquente dans le score ;
+* la prédiction est un ``argmax`` sur les probabilités, pas un seuil ;
+* le dataset est déjà partitionné à la source en ``Training/`` et ``Testing/``, partition
+  qu'on respecte au lieu d'en tirer une au hasard.
+
+Usage:
+    python -m src.training.train_brain_mri --config configs/brain_mri.yaml
+    python -m src.training.train_brain_mri --config configs/brain_mri.yaml --model efficientnetb0
+
+Le lissage d'étiquettes vaut ici 0.05 par défaut, contre 0 pour la radiographie : les
+frontières entre types de tumeurs sont intrinsèquement floues et quelques images sont mal
+étiquetées à la source ; punir le modèle pour son excès de confiance l'aide à généraliser.
+"""
+
 from __future__ import annotations
 
 import argparse
@@ -26,12 +48,24 @@ from src.utils.paths import ensure_dir
 
 
 def set_seed(seed: int) -> None:
+    """Fixe la graine des trois générateurs aléatoires en jeu.
+
+    Args:
+        seed: Graine commune à Python, NumPy et TensorFlow.
+    """
     random.seed(seed)
     np.random.seed(seed)
     tf.random.set_seed(seed)
 
 
 def parse_args() -> argparse.Namespace:
+    """Déclare et lit les arguments de la ligne de commande.
+
+    Returns:
+        Les arguments analysés : ``config`` (YAML, obligatoire), ``model`` (nom du dos,
+        ``densenet121`` par défaut, ou ``baseline``) et ``epochs`` (facultatif, écrase la
+        config).
+    """
     parser = argparse.ArgumentParser(description="Train brain MRI multi-class classifier")
     parser.add_argument("--config", type=str, required=True)
     parser.add_argument("--model", type=str, default="densenet121")
@@ -40,6 +74,19 @@ def parse_args() -> argparse.Namespace:
 
 
 def _gather_labels(ds: tf.data.Dataset) -> np.ndarray:
+    """Extrait tous les labels d'un dataset, dans l'ordre, pour calculer les poids de classe.
+
+    Impose un parcours complet du jeu d'entraînement avant le premier pas d'optimisation.
+    C'est le prix à payer pour des poids calculés sur les données réelles plutôt que fixés
+    à la main — et ils ne peuvent pas être devinés depuis l'arborescence, puisque le
+    découpage validation en a déjà retiré une partie.
+
+    Args:
+        ds: Dataset par lots produisant des couples ``(images, labels)``.
+
+    Returns:
+        Tableau 1D des labels entiers.
+    """
     labels = []
     for _, batch_y in ds.unbatch():
         labels.append(int(batch_y.numpy()))
@@ -47,6 +94,13 @@ def _gather_labels(ds: tf.data.Dataset) -> np.ndarray:
 
 
 def _log_history_metrics(history: dict[str, list[float]]) -> None:
+    """Reporte dans MLflow, pour chaque courbe, sa valeur finale et sa meilleure.
+
+    « Meilleure » vaut minimum pour tout ce qui contient ``loss``, maximum sinon.
+
+    Args:
+        history: Historique d'entraînement : nom de métrique → valeurs par époque.
+    """
     for metric_name, values in history.items():
         if not values:
             continue
@@ -59,6 +113,19 @@ def _log_history_metrics(history: dict[str, list[float]]) -> None:
 
 
 def main() -> None:
+    """Exécute l'entraînement multi-classes de bout en bout, de la config aux artefacts.
+
+    Déroulé : config et graines → jeux de données et noms de classes (déduits des dossiers)
+    → poids de classe calculés sur le train réel → entraînement (``baseline`` de zéro, ou
+    transfert progressif) → prédiction par ``argmax`` sur le test → métriques macro,
+    rapport texte, matrice de confusion, historique → journalisation MLflow.
+
+    Les fichiers produits sont préfixés ``brain_mri_<dos>`` : comparer deux dos ne détruit
+    pas les artefacts du précédent.
+
+    Raises:
+        ValueError: Le dos demandé est inconnu — le message liste les choix valides.
+    """
     args = parse_args()
     cfg = load_config(args.config)
 
