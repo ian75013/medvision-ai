@@ -2,6 +2,28 @@
 
 These rules are mandatory for all coding tasks in medvision-ai.
 
+## 🤝 Handoff 2026-08-19 — Documentation du code (PR #37, FUSIONNÉE)
+
+> **PR** : https://github.com/doctum-consilium/medvision-ai/pull/37 — 68 fichiers, +2885/−43,
+> CI intégralement verte (11 checks, dont « Tests complets (avec TF) »).
+>
+> **Ce qui a été livré :** chaque module, classe et fonction du dépôt porte désormais une
+> docstring Google en français (237 manquantes sur 485 objets avant, zéro après), conforme au
+> *Code Documentation Standard* de ce fichier. Documentation seule, aucun changement de
+> comportement.
+>
+> **Où lire quoi, avant de modifier le code :**
+> - `src/__init__.py` — la carte du paquet et les deux frontières du projet : entraînement vs
+>   production (TF/Torch absents de l'image, ONNX seul en prod) et artefacts hors image (DVC).
+> - `src/registry/model_registry.py` — pourquoi tout est déclaré « en candidats » et marqué
+>   `available` : les modèles arrivent par `dvc pull` APRÈS le démarrage du pod.
+> - `src/training/transfer_utils.py` — le transfert progressif, et le `metrics=["accuracy"]`
+>   en clair sans lequel `model.save()` échoue des heures plus tard (Keras 3).
+> - `src/datasets/splitters.py` — le découpage par patient, contre la fuite de données.
+> - `src/segmentation/data.py` — seul le train est répété ; répéter val/test rend la
+>   validation infinie.
+> - `tests/__init__.py` — pourquoi la suite a deux étages (smoke sans TF / racine avec TF).
+
 ## 🤝 Handoff 2026-06-16 — Migration ONNX (branche feat/ci-quality-2026-06-15)
 
 > **Image à construire : `medvision-ai:2026-06-16a`** — après conversion des modèles sur machine ML.
