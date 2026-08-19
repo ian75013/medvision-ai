@@ -1,3 +1,20 @@
+"""Entraînement PyTorch d'un petit classifieur 2D sur des coupes d'IRM — voie démonstrative.
+
+POURQUOI ce script existe à côté de :mod:`src.training.train` : celui-ci sert la chaîne
+**volumétrique** (NIfTI 3D découpé en coupes 2D via
+:class:`src.datasets.brats_2d_dataset.BrainMRISliceDataset`), sur un CNN écrit à la main
+et sans transfert. Il vaut comme démonstration bout-en-bout et comme test d'intégration de
+la pile Torch : petit, rapide, lisible. Les modèles servis en production, eux, viennent des
+scripts TensorFlow puis d'une conversion ONNX.
+
+Usage:
+    python -m src.training.train_classifier --config configs/brain_mri_2d_demo.yaml
+
+Sélection du modèle retenu : à chaque époque, si l'exactitude de validation s'améliore, les
+poids sont écrits sur disque. Le test final est mesuré sur ces poids-là, rechargés — pas
+sur ceux de la dernière époque, qui peuvent avoir sur-appris.
+"""
+
 from __future__ import annotations
 
 import argparse
@@ -20,12 +37,37 @@ LOGGER = get_logger(__name__)
 
 
 def parse_args() -> argparse.Namespace:
+    """Déclare et lit les arguments de la ligne de commande.
+
+    Returns:
+        Les arguments analysés : ``config``, chemin du YAML décrivant données, modèle et
+        entraînement. Tout le reste se règle dans ce fichier.
+    """
     parser = argparse.ArgumentParser(description="Train a demonstrative 2D MRI classifier")
     parser.add_argument("--config", required=True, help="Path to YAML config")
     return parser.parse_args()
 
 
 def build_loader(csv_path: str | Path, config: dict, shuffle: bool) -> DataLoader:
+    """Construit un ``DataLoader`` de coupes d'IRM à partir d'un CSV de volumes.
+
+    Les trois jeux (train / validation / test) passent par cette même fonction, avec la
+    même config : c'est ce qui garantit que la normalisation et la stratégie de sélection
+    de coupes sont identiques partout. Les faire diverger fausserait l'évaluation sans
+    qu'aucun test ne le détecte.
+
+    Args:
+        csv_path: CSV listant les volumes du jeu et leur label.
+        config: Config complète. Clés lues : ``image_size`` (128), ``normalization.method``
+            (``zscore_nonzero``), ``slice_selection.strategy`` (``central_k``),
+            ``slice_selection.k`` (5), ``batch_size`` (8) et ``num_workers`` (0).
+        shuffle: Vrai pour l'entraînement seulement. Mélanger la validation ou le test ne
+            change pas les scores mais rend les journaux impossibles à comparer d'un run à
+            l'autre.
+
+    Returns:
+        Le ``DataLoader`` prêt à itérer.
+    """
     dataset = BrainMRISliceDataset(
         csv_path=csv_path,
         image_size=int(config.get("image_size", 128)),
@@ -42,6 +84,16 @@ def build_loader(csv_path: str | Path, config: dict, shuffle: bool) -> DataLoade
 
 
 def main() -> None:
+    """Entraîne, sélectionne le meilleur modèle sur la validation, puis mesure sur le test.
+
+    À chaque époque : une passe d'entraînement, une passe de validation, une ligne de
+    journal, et sauvegarde des poids si l'exactitude de validation progresse. Les meilleurs
+    poids sont ensuite rechargés pour l'évaluation finale, dont le résultat est écrit dans
+    ``artifacts/reports/brain_mri_2d_demo_metrics.json`` avec l'historique complet.
+
+    Le périphérique vient de la config (``training.device``, ``cpu`` par défaut) : ce script
+    doit rester exécutable sur une machine sans GPU, c'est sa raison d'être.
+    """
     args = parse_args()
     config = load_config(args.config)
     seed = int(config.get("seed", 42))

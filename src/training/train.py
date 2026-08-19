@@ -1,3 +1,27 @@
+"""Entraînement du classifieur de radiographies thoraciques (normal / pneumonie).
+
+Point d'entrée du stage DVC ``train_chest_xray``. Il lit une config YAML, construit les
+jeux de données depuis un dossier d'images rangé par classe, entraîne — de zéro pour le
+modèle « baseline », par transfert progressif pour tous les autres dos — évalue sur le jeu
+de test et écrit modèle, rapport de classification, métriques, matrice de confusion et
+historique, le tout journalisé dans MLflow.
+
+Usage:
+    python -m src.training.train --config configs/chest_xray.yaml
+    python -m src.training.train --config configs/chest_xray.yaml --model baseline
+    python -m src.training.train --config configs/chest_xray.yaml --model resnet50 --epochs 20
+
+POURQUOI des poids de classe : le dataset de référence (Kermany) contient environ trois
+fois plus de cas de pneumonie que de cas normaux. Sans rééquilibrage, le modèle apprend
+qu'annoncer « pneumonie » paie presque toujours, obtient une belle exactitude et rate
+précisément ce qu'on lui demande de distinguer. Les poids sont calculés sur le jeu
+d'entraînement réel, pas fixés à la main, pour rester justes si le dataset change.
+
+POURQUOI ``--model`` en ligne de commande plutôt que dans la config : on compare plusieurs
+dos sur la **même** config de données, et les artefacts sont préfixés par le nom du dos.
+Deux entraînements successifs ne s'écrasent donc pas.
+"""
+
 from __future__ import annotations
 
 import argparse
@@ -22,12 +46,27 @@ from src.utils.paths import ensure_dir
 
 
 def set_seed(seed: int) -> None:
+    """Fixe la graine des trois générateurs aléatoires en jeu.
+
+    Python, NumPy et TensorFlow tirent chacun de leur côté ; n'en fixer qu'un laisse
+    l'entraînement irreproductible sans que rien ne le signale.
+
+    Args:
+        seed: Graine commune.
+    """
     random.seed(seed)
     np.random.seed(seed)
     tf.random.set_seed(seed)
 
 
 def parse_args() -> argparse.Namespace:
+    """Déclare et lit les arguments de la ligne de commande.
+
+    Returns:
+        Les arguments analysés : ``config`` (chemin YAML, obligatoire), ``model`` (nom du
+        dos, ``densenet121`` par défaut, ou ``baseline`` pour le petit CNN entraîné de
+        zéro) et ``epochs`` (facultatif, écrase la valeur de la config).
+    """
     parser = argparse.ArgumentParser(description="Train a medical image classification model")
     parser.add_argument("--config", type=str, required=True, help="Path to YAML config file")
     parser.add_argument("--model", type=str, default="densenet121", help="baseline or transfer backbone name")
@@ -36,6 +75,14 @@ def parse_args() -> argparse.Namespace:
 
 
 def _log_history_metrics(history: dict[str, list[float]]) -> None:
+    """Reporte dans MLflow, pour chaque courbe, sa valeur finale et sa meilleure.
+
+    « Meilleure » vaut minimum pour tout ce qui contient ``loss`` et maximum sinon — sans
+    cette distinction, comparer deux runs mettrait la pire perte en tête du classement.
+
+    Args:
+        history: Historique d'entraînement : nom de métrique → valeurs par époque.
+    """
     for metric_name, values in history.items():
         if not values:
             continue
@@ -48,6 +95,28 @@ def _log_history_metrics(history: dict[str, list[float]]) -> None:
 
 
 def main() -> None:
+    """Exécute l'entraînement de bout en bout, de la config aux artefacts.
+
+    Déroulé :
+
+    1. Config, graines, jeux de données (train / validation / test).
+    2. Calcul des poids de classe sur le jeu d'entraînement réel — voir la note du module.
+    3. Entraînement : ``baseline`` part de zéro en une seule phase ; tout autre dos passe
+       par le transfert progressif de :mod:`src.training.transfer_utils`. Le partage des
+       époques entre chauffe et affinage se déduit du total (un tiers en chauffe, borné
+       entre 3 et 6) sauf si la config le fixe.
+    4. Prédiction sur le test, normalisée en un vecteur 1D de probabilités de la classe
+       positive — les deux têtes possibles (softmax à 2 sorties, sigmoïde à 1) n'ont pas la
+       même forme, et les métriques binaires n'en acceptent qu'une.
+    5. Écriture des artefacts, préfixés par le nom du dos, et journalisation MLflow.
+
+    Les métriques et le chemin du modèle sont aussi affichés en JSON sur la sortie
+    standard, pour DVC et pour l'humain qui regarde le terminal.
+
+    Raises:
+        ValueError: Le dos demandé n'existe pas dans
+            :data:`src.models.backbones.TF_BACKBONES` — le message liste les choix valides.
+    """
     args = parse_args()
     config = load_config(args.config)
 

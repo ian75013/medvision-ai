@@ -67,6 +67,18 @@ def create_app(
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
+        """Démarre le watcher DVC à l'ouverture de l'application, l'arrête à la fermeture.
+
+        Le cycle de vie est attaché à l'application et non au module : le watcher a besoin
+        d'une boucle d'événements en cours, et les tests comme les workers uvicorn doivent
+        pouvoir le démarrer et l'arrêter eux-mêmes.
+
+        Args:
+            app: L'application, dont ``state.watcher`` a été posé par ``create_app``.
+
+        Yields:
+            Rien — le ``yield`` marque la période de service.
+        """
         # Le watcher démarre AVEC l'event loop (pas à l'import : les tests
         # et les workers uvicorn doivent contrôler son cycle de vie).
         app.state.watcher.start()
@@ -216,14 +228,43 @@ def _register_legacy_routes(app: FastAPI) -> None:
 
     @app.get("/health")
     def health() -> dict[str, str]:
+        """Sonde de vivacité, consommée par les probes Kubernetes.
+
+        Ne touche ni au disque ni aux modèles : elle doit répondre même quand le ``dvc
+        pull`` du démarrage n'a encore rien ramené, sinon le pod serait tué en boucle avant
+        d'avoir fini de se préparer.
+
+        Returns:
+            ``{"status": "ok"}``.
+        """
         return {"status": "ok"}
 
     @app.get("/registry")
     def registry() -> dict[str, Any]:
+        """Renvoie le registre complet des problèmes et de leurs modèles.
+
+        Relit le disque à chaque appel, sans passer par ``app.state.registry_state`` : c'est
+        le comportement historique, conservé pour les scripts qui en dépendent.
+
+        Returns:
+            Le registre tel que produit par
+            :func:`src.registry.model_registry.load_registry`.
+        """
         return load_registry()
 
     @app.get("/models")
     def list_models(problem: str | None = Query(default=None)) -> dict[str, Any]:
+        """Liste les modèles, tous problèmes confondus ou pour un problème donné.
+
+        Args:
+            problem: Identifiant de problème. Absent, renvoie le registre entier.
+
+        Returns:
+            L'entrée du problème demandé, ou le registre complet.
+
+        Raises:
+            HTTPException: 404 si le problème demandé n'existe pas.
+        """
         reg = load_registry()
         if problem:
             if problem not in reg["problems"]:
@@ -233,6 +274,17 @@ def _register_legacy_routes(app: FastAPI) -> None:
 
     @app.get("/compare")
     def compare(problem: str = Query(..., description="Problem id")) -> dict[str, Any]:
+        """Compare les modèles d'un problème, une ligne de métriques par modèle.
+
+        Args:
+            problem: Identifiant du problème.
+
+        Returns:
+            ``{"problem": str, "rows": [...]}`` — le tableau de comparaison affiché par l'UI.
+
+        Raises:
+            HTTPException: 404 si le problème est inconnu.
+        """
         try:
             return {"problem": problem, "rows": compare_models(problem)}
         except KeyError as exc:

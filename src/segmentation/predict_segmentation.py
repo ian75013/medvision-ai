@@ -1,3 +1,24 @@
+"""Inférence de segmentation en ligne de commande : une image entre, un masque sort.
+
+POURQUOI ce script existe à côté de l'API et de l'UI : il rejoue un modèle **sans rien
+d'autre** — ni FastAPI, ni Streamlit, ni ONNX Runtime. C'est l'outil de vérification
+manuelle après un entraînement (« le modèle que je viens de sauvegarder segmente-t-il
+vraiment quelque chose ? ») et le point de comparaison quand l'API renvoie un résultat
+douteux : si le ``.keras`` d'origine donne le bon masque et pas l'API, le problème est dans
+la conversion ONNX ou le pré-traitement de l'API, pas dans le modèle.
+
+Il charge donc un ``.keras`` via TensorFlow, là où la production sert de l'ONNX.
+
+Usage:
+    python -m src.segmentation.predict_segmentation \\
+        --model-path artifacts/models/brain_tumor_segmentation_unet.keras \\
+        --image-path data/raw/brain_tumor_segmentation/images/case_042.png \\
+        --output-dir artifacts/inference
+
+Écrit dans ``--output-dir`` : ``predicted_mask.png`` (le masque seul),
+``predicted_overlay.png`` (le masque posé sur l'image) et ``prediction.json`` (les chemins
+produits et, pour un modèle multitâche, les probabilités de classe).
+"""
 
 from __future__ import annotations
 
@@ -13,6 +34,13 @@ from src.segmentation.overlays import mask_to_pil, save_overlay
 
 
 def parse_args() -> argparse.Namespace:
+    """Déclare et lit les arguments de la ligne de commande.
+
+    Returns:
+        Les arguments analysés : ``model_path`` et ``image_path`` (obligatoires),
+        ``output_dir`` (défaut ``artifacts/inference``) et ``image_size`` (défaut 256, qui
+        doit correspondre à la taille vue à l'entraînement, sinon le modèle refuse l'entrée).
+    """
     parser = argparse.ArgumentParser(description='Run segmentation inference')
     parser.add_argument('--model-path', required=True)
     parser.add_argument('--image-path', required=True)
@@ -22,6 +50,24 @@ def parse_args() -> argparse.Namespace:
 
 
 def main() -> None:
+    """Charge le modèle, segmente une image et écrit masque, superposition et JSON.
+
+    Le modèle est chargé avec ``compile=False`` : les métriques personnalisées
+    (``dice_coefficient``, ``iou_score``) ne sont pas enregistrables telles quelles, et
+    Keras échouerait à reconstruire l'optimiseur alors qu'on ne veut qu'un passage avant.
+
+    Deux formes de sortie sont acceptées, ce qui permet d'utiliser le même script pour les
+    deux architectures : un dictionnaire (U-Net multitâche, dont on lit
+    ``segmentation_output`` et, si présent, ``classification_output``) ou un tableau nu
+    (U-Net de segmentation seule).
+
+    Le masque est binarisé au seuil 0.5 avant écriture — c'est le même seuil que celui des
+    métriques d'évaluation, et le déplacer ici sans le déplacer là-bas rendrait les scores
+    incomparables.
+
+    Le résultat est écrit sur disque **et** affiché sur la sortie standard, pour être
+    directement exploitable dans un script appelant.
+    """
     args = parse_args()
     model = tf.keras.models.load_model(args.model_path, compile=False)
     image = load_and_preprocess_image(args.image_path, image_size=args.image_size)

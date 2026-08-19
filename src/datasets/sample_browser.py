@@ -507,6 +507,12 @@ class SampleIndex:
     """
 
     def __init__(self) -> None:
+        """Crée un index vide.
+
+        L'index vit en mémoire, par processus : il est reconstruit au démarrage et à chaque
+        rebalayage. Ce n'est pas un cache à faire durer — un identifiant ne doit jamais
+        survivre au dataset qui l'a produit.
+        """
         self._by_problem: dict[str, dict[str, dict[str, Any]]] = {}
 
     def put(self, problem: str, samples: list[dict[str, Any]]) -> None:

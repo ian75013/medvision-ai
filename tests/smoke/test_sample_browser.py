@@ -122,6 +122,15 @@ def test_collect_images_from_dirs_ignores_missing_dirs(tmp_path: Path) -> None:
 
 
 def _write_manifest(tmp_path: Path, rows: list[dict[str, str]]) -> Path:
+    """Écrit un manifeste CSV minimal dans un dossier temporaire.
+
+    Args:
+        tmp_path: Dossier temporaire du test.
+        rows: Lignes à écrire — colonnes ``image_path``, ``mask_path``, ``label``, ``split``.
+
+    Returns:
+        Le chemin du manifeste écrit.
+    """
     manifest = tmp_path / "manifest.csv"
     with manifest.open("w", newline="") as fh:
         writer = csv.DictWriter(fh, fieldnames=["image_path", "mask_path", "label", "split"])
@@ -158,6 +167,14 @@ def test_collect_images_from_manifest_missing_or_invalid(tmp_path: Path) -> None
 
 
 def _fake_samples() -> list[dict[str, str]]:
+    """Trois échantillons en dur — deux NORMAL, un PNEUMONIA — pour tester filtres et tri.
+
+    Le déséquilibre 2/1 est délibéré : c'est lui qui rend observable l'équilibrage par
+    classe des recommandations.
+
+    Returns:
+        Les échantillons, au format produit par ``build_problem_image_database``.
+    """
     return [
         {"path": "p1", "label": "NORMAL", "sample_id": "sample-01", "display": "NORMAL | sample-01"},
         {"path": "p2", "label": "PNEUMONIA", "sample_id": "sample-02", "display": "PNEUMONIA | sample-02"},

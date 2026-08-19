@@ -190,6 +190,14 @@ class ModelWatcher:
         loop = asyncio.get_running_loop()
 
         def _head() -> str | None:
+            """Appel S3 bloquant, exécuté hors boucle événementielle par l'appelant.
+
+            Returns:
+                L'ETag du manifeste, ou ``None`` s'il n'existe pas encore — cas normal
+                d'une veille qui démarre avant la première publication. Toute autre erreur
+                est propagée : une panne d'accès à S3 ne doit pas se déguiser en « rien de
+                nouveau ».
+            """
             client = self._client()
             try:
                 return client.head_object(Bucket=bucket, Key=key)["ETag"]

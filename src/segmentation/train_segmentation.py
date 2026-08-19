@@ -1,35 +1,42 @@
 
 
-"""
-Segmentation Training Script (Medvision-AI)
-------------------------------------------------
-This script trains segmentation or multitask segmentation/classification models using TensorFlow/Keras.
+"""Entraînement des modèles de segmentation (et multitâche) sous TensorFlow/Keras.
 
-Key Hyperparameters (with typical defaults):
-------------------------------------------------
-- image_size: int (default: 256)
-    Size to which input images are resized.
-- batch_size: int (default: 8)
-    Number of samples per training batch.
-- epochs: int (default: 10, or dynamically set if not specified)
-    Number of training epochs. If not set, dynamically chosen to reach ~1000 steps.
-- learning_rate: float (default: 0.001)
-    Learning rate for Adam optimizer.
-- validation_split: float (default: 0.2)
-    Fraction of data used for validation.
-- seed: int (default: 42)
-    Random seed for reproducibility.
-- loss:
-    - Segmentation: binary_crossentropy
-    - Classification: binary_crossentropy (2 classes) or sparse_categorical_crossentropy (>2 classes)
-- loss_weights:
-    - segmentation_output: 1.0
-    - classification_output: 0.4
-- callbacks:
-    - EarlyStopping (monitor='val_loss', patience=3, restore_best_weights=True)
-    - ReduceLROnPlateau (monitor='val_loss', factor=0.2, patience=2)
+C'est le point d'entrée appelé par le stage DVC ``train_brain_tumor_segmentation``. Il lit
+une config YAML, construit les jeux de données, entraîne, évalue sur le test, écrit les
+artefacts (modèle, métriques, historique, superposition d'exemple) et journalise le tout
+dans MLflow.
 
-All hyperparameters can be set in the YAML config file or overridden by command-line arguments (where available).
+Usage:
+    python -m src.segmentation.train_segmentation --config configs/brain_tumor_segmentation.yaml
+    python -m src.segmentation.train_segmentation --config <cfg> --epochs 3   # écrase la config
+
+Hyperparamètres lus dans la config (valeurs par défaut entre parenthèses) :
+
+* ``image_size`` (256) — côté du carré auquel les images sont redimensionnées.
+* ``batch_size`` (8) — taille des lots.
+* ``epochs`` (aucune) — si absent, calculé dynamiquement pour atteindre ~1000 pas
+  d'optimisation, afin qu'un petit dataset ne s'entraîne pas en trois pas et qu'un gros ne
+  tourne pas des heures.
+* ``learning_rate`` (1e-3) — pas de l'optimiseur Adam.
+* ``validation_split`` (0.2) — fraction réservée à la validation.
+* ``seed`` (42) — graine de reproductibilité (Python, NumPy et TensorFlow).
+* ``task_type`` (``multitask``) — ``multitask`` pour le U-Net à deux têtes, autre valeur
+  pour la segmentation seule.
+* ``segmentation_loss_weight`` (1.0) et ``classification_loss_weight`` (0.4) — le masque
+  pèse plus que la classe : la segmentation est la tâche difficile, la classification n'est
+  là que pour régulariser l'encodeur.
+
+Pertes : entropie croisée binaire pour le masque ; binaire pour la classification à deux
+classes, ``sparse_categorical_crossentropy`` au-delà. Rappels : ``EarlyStopping``
+(patience 3, restauration des meilleurs poids) et ``ReduceLROnPlateau`` (facteur 0.2,
+patience 2).
+
+POURQUOI la structure ``try/finally`` autour de ``fit`` : un entraînement long peut
+échouer ou être interrompu après plusieurs heures. Le bloc ``finally`` sauvegarde ce qui
+peut l'être — modèle, historique — avant de relancer l'exception, pour ne pas perdre le
+travail déjà fait. Et l'échec de la journalisation MLflow n'est jamais fatal : les
+artefacts locaux, eux, sont écrits.
 """
 from __future__ import annotations
 
@@ -53,6 +60,21 @@ from src.utils.paths import ensure_dir
 
 
 def dice_coefficient(y_true, y_pred, smooth: float = 1e-6):
+    """Coefficient de Dice en TensorFlow, utilisable comme métrique pendant ``fit``.
+
+    Version graphe de :func:`src.segmentation.metrics.dice_coefficient_np`. Les deux
+    doivent rester d'accord : celle-ci suit l'entraînement époque par époque, l'autre
+    produit le chiffre publié dans le rapport final.
+
+    Args:
+        y_true: Masque de vérité terrain (tenseur de forme quelconque, aplati ici).
+        y_pred: Masque prédit, **probabilités non seuillées** — c'est voulu : seuiller
+            couperait le gradient et rendrait la métrique inutilisable comme perte.
+        smooth: Terme de lissage, évite la division par zéro sur les coupes sans lésion.
+
+    Returns:
+        Tenseur scalaire : le Dice du lot.
+    """
     y_true_f = tf.cast(tf.reshape(y_true, [-1]), tf.float32)
     y_pred_f = tf.cast(tf.reshape(y_pred, [-1]), tf.float32)
     intersection = tf.reduce_sum(y_true_f * y_pred_f)
@@ -60,6 +82,16 @@ def dice_coefficient(y_true, y_pred, smooth: float = 1e-6):
 
 
 def iou_score(y_true, y_pred, smooth: float = 1e-6):
+    """Intersection sur union en TensorFlow, suivie comme métrique pendant ``fit``.
+
+    Args:
+        y_true: Masque de vérité terrain.
+        y_pred: Masque prédit, probabilités non seuillées.
+        smooth: Terme de lissage.
+
+    Returns:
+        Tenseur scalaire : l'IoU du lot.
+    """
     y_true_f = tf.cast(tf.reshape(y_true, [-1]), tf.float32)
     y_pred_f = tf.cast(tf.reshape(y_pred, [-1]), tf.float32)
     intersection = tf.reduce_sum(y_true_f * y_pred_f)
@@ -68,12 +100,27 @@ def iou_score(y_true, y_pred, smooth: float = 1e-6):
 
 
 def set_seed(seed: int) -> None:
+    """Fixe la graine des trois générateurs aléatoires en jeu.
+
+    Python, NumPy et TensorFlow tirent chacun de leur côté : n'en fixer qu'un laisse
+    l'entraînement irreproductible sans que rien ne le signale.
+
+    Args:
+        seed: Graine commune.
+    """
     random.seed(seed)
     np.random.seed(seed)
     tf.random.set_seed(seed)
 
 
 def parse_args() -> argparse.Namespace:
+    """Déclare et lit les arguments de la ligne de commande.
+
+    Returns:
+        Les arguments analysés : ``config`` (chemin YAML, obligatoire) et ``epochs``
+        (facultatif — fourni, il écrase la valeur de la config ; absent, le nombre d'époques
+        est calculé dynamiquement dans :func:`main`).
+    """
     parser = argparse.ArgumentParser(description='Train segmentation or multitask segmentation/classification model')
     parser.add_argument('--config', required=True)
     parser.add_argument('--epochs', type=int, default=None)
@@ -81,6 +128,15 @@ def parse_args() -> argparse.Namespace:
 
 
 def _log_history_metrics(history: dict[str, list[float]]) -> None:
+    """Reporte dans MLflow, pour chaque courbe d'entraînement, sa valeur finale et sa meilleure.
+
+    « Meilleure » dépend du sens de la métrique : minimum pour tout ce qui contient
+    ``loss``, maximum sinon. Sans cette distinction, la comparaison de deux runs classerait
+    la pire perte en tête.
+
+    Args:
+        history: Historique Keras (``history.history``) : nom de métrique → valeurs par époque.
+    """
     for metric_name, values in history.items():
         if not values:
             continue
@@ -93,6 +149,28 @@ def _log_history_metrics(history: dict[str, list[float]]) -> None:
 
 
 def main() -> None:
+    """Exécute l'entraînement de bout en bout, de la config aux artefacts.
+
+    Déroulé :
+
+    1. Lecture de la config, fixation des graines, construction des trois jeux de données.
+    2. Choix du nombre d'époques — celui demandé, ou celui qui donne environ 1000 pas.
+    3. Construction et compilation du modèle : U-Net multitâche (deux pertes pondérées) ou
+       U-Net de segmentation seule.
+    4. ``fit`` sous MLflow, entouré d'un ``try/finally`` qui sauvegarde le modèle et
+       l'historique même si l'entraînement échoue, puis relance l'exception.
+    5. Évaluation sur le jeu de test : Dice, IoU, exactitude pixel, précision/rappel/F1 du
+       masque, et les mêmes pour la classification en multitâche.
+    6. Écriture des artefacts — modèle ``.keras``, ``*_metrics.json``, ``*_history.json``,
+       superposition d'exemple — puis journalisation MLflow, dont l'échec n'est pas fatal.
+
+    Les métriques finales sont aussi affichées en JSON sur la sortie standard, pour être
+    lues par DVC et par l'humain qui regarde le terminal.
+
+    Raises:
+        Exception: Toute erreur survenue pendant ``fit`` est relancée après la sauvegarde
+            de secours, afin que DVC voie bien l'échec du stage.
+    """
     args = parse_args()
     cfg = load_config(args.config)
     seed = int(cfg.get('seed', 42))

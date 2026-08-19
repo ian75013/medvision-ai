@@ -1,3 +1,24 @@
+"""Catalogue des problèmes médicaux et des modèles ONNX qui les servent.
+
+POURQUOI ce module est le cœur du service : il est la seule description de « quels
+problèmes l'application sait traiter, avec quels modèles, quelles classes et quels
+rapports ». L'API comme l'UI Streamlit s'y adressent ; ajouter un modèle au produit, c'est
+ajouter une entrée dans :data:`PROBLEMS`, pas modifier du code d'inférence.
+
+Trois principes gouvernent sa forme :
+
+* **Tout est déclaré en candidats, rien n'est supposé présent.** Les modèles ne sont pas
+  dans l'image Docker : ils arrivent par ``dvc pull`` au démarrage du pod. Le registre
+  décrit donc ce qui *pourrait* être là et marque chaque entrée ``available`` selon ce qui
+  est réellement sur le disque. Un artefact manquant dégrade le service au lieu de
+  l'empêcher de démarrer.
+* **ONNX partout** (migration de juin 2026). Ni TensorFlow ni PyTorch ne sont installés en
+  production ; les ``.keras`` et ``.pt`` restent versionnés dans DVC pour l'entraînement et
+  la reconversion. Voir ``scripts/convert_to_onnx.py``.
+* **Les noms de classes viennent de la config du problème**, pas du modèle : un réseau ne
+  sort que des indices, et c'est la config qui dit ce qu'ils désignent.
+"""
+
 from __future__ import annotations
 
 import json
@@ -133,6 +154,18 @@ PROBLEMS: dict[str, dict[str, Any]] = {
 
 
 def _load_json(path: Path) -> dict[str, Any]:
+    """Lit un JSON de métriques, ou renvoie un dictionnaire vide.
+
+    Ne lève jamais, à dessein : un rapport de métriques absent ou tronqué (transfert DVC
+    interrompu) ne doit pas empêcher le modèle d'être servi. La conséquence visible est un
+    modèle sans métriques affichées, et sans score de classement — voir :func:`score`.
+
+    Args:
+        path: Chemin du JSON.
+
+    Returns:
+        Le contenu du fichier, ou ``{}`` s'il est absent ou illisible.
+    """
     if not path.exists():
         return {}
     try:
@@ -142,6 +175,20 @@ def _load_json(path: Path) -> dict[str, Any]:
 
 
 def _find_first_existing(directory: Path, names: list[str] | tuple[str, ...]) -> Path | None:
+    """Renvoie le premier des fichiers candidats qui existe réellement.
+
+    Les artefacts ont changé de nom au fil des sprints ; la liste de candidats permet de
+    servir aussi bien un rapport produit récemment qu'un ancien resté en place, sans
+    renommage rétroactif.
+
+    Args:
+        directory: Dossier où chercher.
+        names: Noms candidats, dans l'ordre de préférence. Les chaînes vides sont ignorées
+            — elles viennent des ``spec.get(...)`` sans valeur.
+
+    Returns:
+        Le chemin du premier fichier trouvé, ou ``None``.
+    """
     for name in names:
         if not name:
             continue
@@ -227,6 +274,17 @@ def best_available_model(
         return None
 
     def score(meta: dict[str, Any]) -> float:
+        """Note un modèle par la première métrique de classement qu'il expose.
+
+        Args:
+            meta: Entrée de modèle du registre.
+
+        Returns:
+            La valeur de la première métrique trouvée dans ``_RANKING_METRICS``, ou ``-1.0``
+            si le modèle n'en publie aucune. Ce ``-1.0`` le place derrière tout modèle
+            mesuré, sans l'exclure : mieux vaut servir un modèle sans métriques que ne rien
+            servir du tout.
+        """
         metrics = meta.get("metrics", {}) or {}
         for key in _RANKING_METRICS:
             value = metrics.get(key)
